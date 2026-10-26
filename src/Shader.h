@@ -44,6 +44,7 @@ public:
     void setFloat(const std::string& n, float v) const { glUniform1f(glGetUniformLocation(ID, n.c_str()), v); }
     void setVec3(const std::string& n, const glm::vec3& v) const { glUniform3fv(glGetUniformLocation(ID, n.c_str()), 1, &v[0]); }
     void setMat4(const std::string& n, const glm::mat4& m) const { glUniformMatrix4fv(glGetUniformLocation(ID, n.c_str()), 1, GL_FALSE, glm::value_ptr(m)); }
+    void setVec2(const std::string& n, const glm::vec2& v) const { glUniform2fv(glGetUniformLocation(ID, n.c_str()), 1, &v[0]); }
 
 private:
     static std::string readFile(const std::string& path) {
