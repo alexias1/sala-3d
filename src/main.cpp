@@ -1,4 +1,4 @@
-#include <glad/glad.h>   
+#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -181,7 +181,7 @@ void processInput(GLFWwindow* window) {
 }
 
 void drawObj(Shader& s, const Mesh& mesh, const glm::mat4& model, const Material& m,
-             unsigned int tex, glm::vec2 uvScale = glm::vec2(1.0f)) {
+             unsigned int tex, glm::vec2 uvScale = glm::vec2(1.0f), unsigned int nmap = 0) {
     s.setMat4("model", model);
     s.setVec3("material.ka", m.ka);
     s.setVec3("material.kd", m.kd);
@@ -191,6 +191,12 @@ void drawObj(Shader& s, const Mesh& mesh, const glm::mat4& model, const Material
     s.setVec2("uvScale", uvScale);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, tex);
+    s.setFloat("normalStrength", nmap ? 2.0f : 0.0f);   // 2.0 = relevo mais forte; 0 = sem relevo
+    if (nmap) {
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, nmap);
+        glActiveTexture(GL_TEXTURE0);
+    }
     mesh.draw();
 }
 
@@ -238,6 +244,8 @@ int main() {
     unsigned int texWood = loadTexture("assets/textures/wood.jpg");
     unsigned int texFloor = loadTexture("assets/textures/floor.jpg");
     unsigned int texWall = loadTexture("assets/textures/wall.jpg");
+    unsigned int nrmFloor = loadNormalMap("assets/textures/floor_normal.jpg");
+    unsigned int nrmWall  = loadNormalMap("assets/textures/wall_normal.jpg");
 
     // Materiais extras da TV
     Material tvFrame{{0.05f,0.05f,0.05f}, {0.1f,0.1f,0.1f}, {0.3f,0.3f,0.3f}, 32.0f};
@@ -378,6 +386,7 @@ int main() {
         shader.setMat4("view", camera.getViewMatrix());
         shader.setVec3("viewPos", camera.position);
         shader.setInt("tex", 0);
+        shader.setInt("normalMap", 1);
 
         // ---- Luzes (o shader aceita até 4) ----
         float flicker  = 0.85f + 0.15f * std::sin(now * 9.0f);                           // TV "pisca"
@@ -415,15 +424,15 @@ int main() {
         }
 
         // ---- Chão, teto e paredes ----
-        drawObj(shader, plane, makeModel({0, 0, 0}, {10, 1, 10}), Mat::floorDark(), texFloor, {5, 5});
-        drawObj(shader, cube, makeModel({0, 3.1f, 0}, {10.4f, 0.2f, 10.4f}), Mat::wallHalloween(), texWall, {3, 3});   // teto
-        drawObj(shader, cube, makeModel({0, 1.5f, -5}, {10, 3, 0.2f}), Mat::wallHalloween(), texWall, {3, 1});        // fundo
-        drawObj(shader, cube, makeModel({0, 1.5f, 5}, {10, 3, 0.2f}), Mat::wallHalloween(), texWall, {3, 1});         // frente
-        drawObj(shader, cube, makeModel({-5, 1.5f, 0}, {0.2f, 3, 10}), Mat::wallHalloween(), texWall, {3, 1});        // esquerda
+        drawObj(shader, plane, makeModel({0, 0, 0}, {10, 1, 10}), Mat::floorDark(), texFloor, {5, 5}, nrmFloor);
+        drawObj(shader, cube, makeModel({0, 3.1f, 0}, {10.4f, 0.2f, 10.4f}), Mat::wallHalloween(), texWall, {3, 3}, nrmWall);   // teto
+        drawObj(shader, cube, makeModel({0, 1.5f, -5}, {10, 3, 0.2f}), Mat::wallHalloween(), texWall, {3, 1}, nrmWall);        // fundo
+        drawObj(shader, cube, makeModel({0, 1.5f, 5}, {10, 3, 0.2f}), Mat::wallHalloween(), texWall, {3, 1}, nrmWall);         // frente
+        drawObj(shader, cube, makeModel({-5, 1.5f, 0}, {0.2f, 3, 10}), Mat::wallHalloween(), texWall, {3, 1}, nrmWall);        // esquerda
         // parede direita em 3 pedaços, deixando um vão de porta (z de 1 a 2, altura 2.2)
-        drawObj(shader, cube, makeModel({5, 1.5f, -2.0f}, {0.2f, 3, 6}), Mat::wallHalloween(), texWall, {2, 1});
-        drawObj(shader, cube, makeModel({5, 1.5f, 3.5f}, {0.2f, 3, 3}), Mat::wallHalloween(), texWall, {1, 1});
-        drawObj(shader, cube, makeModel({5, 2.6f, 1.5f}, {0.2f, 0.8f, 1}), Mat::wallHalloween(), texWall);
+        drawObj(shader, cube, makeModel({5, 1.5f, -2.0f}, {0.2f, 3, 6}), Mat::wallHalloween(), texWall, {2, 1}, nrmWall);
+        drawObj(shader, cube, makeModel({5, 1.5f, 3.5f}, {0.2f, 3, 3}), Mat::wallHalloween(), texWall, {1, 1}, nrmWall);
+        drawObj(shader, cube, makeModel({5, 2.6f, 1.5f}, {0.2f, 0.8f, 1}), Mat::wallHalloween(), texWall, glm::vec2(1.0f), nrmWall);
 
         // ---- Porta: HIERARQUIA (a dobradiça é a origem local) ----
         glm::mat4 doorBase(1.0f);
