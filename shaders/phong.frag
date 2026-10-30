@@ -19,7 +19,7 @@ struct Light {
     float quadratic;
 };
 
-#define MAX_LIGHTS 4
+#define MAX_LIGHTS 8
 uniform Material material;
 uniform Light lights[MAX_LIGHTS];
 uniform int numLights;
