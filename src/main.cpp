@@ -1,4 +1,4 @@
-#include <glad/glad.h>   // SEMPRE antes do GLFW
+#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -11,6 +11,7 @@
 #include "Mesh.h"
 #include "Material.h"
 #include "Texture.h"
+#include "Hud.h"
 
 const int SCR_W = 1280, SCR_H = 720;
 const float PI_F = 3.14159265f;
@@ -28,29 +29,126 @@ float doorOpen = 0.0f;    // 0 = fechada, 1 = aberta (animado aos poucos)
 float fanSpeed = 0.0f;    // graus por segundo (acelera e desacelera)
 float fanAngle = 0.0f;
 
-// Posição da abóbora grande (também é uma fonte de luz)
+// ---------- Estado da MISSAO ----------
+bool candleLit[3] = {false, false, false};
+bool candyGot[3]  = {false, false, false};
+bool potionDone = false;   // doces jogados no caldeirao
+bool keyGot = false;       // pegou a chave (destranca a porta)
+bool escaped = false;      // abriu a porta com a chave: fim
+double escapeTime = 0.0;
+std::string toast;         // mensagem temporaria na tela
+double toastUntil = 0.0;
+void say(const std::string& m, double secs = 3.5) { toast = m; toastUntil = glfwGetTime() + secs; }
+
+// Posicao (x,z) das velas sobre a mesa
+const glm::vec2 CANDLE_XZ[3] = {{-0.7f, -0.28f}, {0.65f, 0.3f}, {0.2f, -0.3f}};
+// Doces escondidos pela sala
+const glm::vec3 CANDY_POS[3] = {{-3.9f, 0.15f, -3.2f}, {3.9f, 0.15f, 3.9f}, {-1.2f, 0.15f, -3.8f}};
+const glm::vec3 CAULDRON(3.3f, 0.0f, -2.0f);
+const glm::vec3 KEY_POS = CAULDRON + glm::vec3(0.0f, 1.35f, 0.0f);
+
+// Posicao da abobora grande (tambem e uma fonte de luz)
 const glm::vec3 BIG_PUMPKIN(-3.2f, 0.0f, 2.2f);
 
-struct Interactable { const char* name; glm::vec3 pos; bool* state; };
-Interactable items[] = {
-    {"porta",      {5.0f, 1.0f, 1.5f},   &doorTarget},
-    {"TV",         {2.5f, 1.2f, -4.8f},  &tvOn},
-    {"ventilador", {-2.5f, 2.8f, -2.5f}, &fanOn},
-    {"abajur",     {0.0f, 1.3f, 0.0f},   &lampOn},
-    {"abobora",    {-3.2f, 0.4f, 2.2f},  &pumpkinOn}
-};
-const int NITEMS = 5;
-const float REACH = 2.5f;   // alcance (metros)
+// Cada item interativo tem um ID; a ordem aqui = ordem do array items[]
+enum ItemId { I_DOOR, I_TV, I_FAN, I_LAMP, I_PUMPKIN,
+              I_CANDLE0, I_CANDLE1, I_CANDLE2,
+              I_CANDY0, I_CANDY1, I_CANDY2,
+              I_CAULDRON, I_KEY, I_COUNT };
 
-// Objeto interativo mais próximo da câmera (distância no plano XZ), ou -1
-int nearestItem() {
-    int best = -1; float bestD = REACH;
-    for (int i = 0; i < NITEMS; i++) {
-        float d = glm::length(glm::vec2(camera.position.x - items[i].pos.x,
-                                        camera.position.z - items[i].pos.z));
-        if (d < bestD) { bestD = d; best = i; }
+struct Interactable { const char* name; glm::vec3 pos; };
+Interactable items[I_COUNT] = {
+    {"porta",      {5.0f, 1.0f, 1.5f}},
+    {"TV",         {2.5f, 1.2f, -4.8f}},
+    {"ventilador", {-2.5f, 2.8f, -2.5f}},
+    {"abajur",     {0.0f, 1.3f, 0.0f}},
+    {"abobora",    {-3.2f, 0.4f, 2.2f}},
+    {"vela",       {CANDLE_XZ[0].x, 0.95f, CANDLE_XZ[0].y}},
+    {"vela",       {CANDLE_XZ[1].x, 0.95f, CANDLE_XZ[1].y}},
+    {"vela",       {CANDLE_XZ[2].x, 0.95f, CANDLE_XZ[2].y}},
+    {"doce",       CANDY_POS[0]},
+    {"doce",       CANDY_POS[1]},
+    {"doce",       CANDY_POS[2]},
+    {"caldeirao",  {CAULDRON.x, 0.6f, CAULDRON.z}},
+    {"chave",      KEY_POS}
+};
+const float REACH = 3.0f;   // alcance (metros)
+
+int candlesLit() { return (int)candleLit[0] + (int)candleLit[1] + (int)candleLit[2]; }
+int candyCount() { return (int)candyGot[0] + (int)candyGot[1] + (int)candyGot[2]; }
+
+// Item aparece/pode ser usado agora?
+bool itemActive(int id) {
+    if (id >= I_CANDLE0 && id <= I_CANDLE2) return !candleLit[id - I_CANDLE0];
+    if (id >= I_CANDY0 && id <= I_CANDY2)   return !candyGot[id - I_CANDY0];
+    if (id == I_CAULDRON) return !potionDone;
+    if (id == I_KEY)      return potionDone && !keyGot;
+    return true;
+}
+
+// Item para o qual a camera esta APONTANDO (angulo ~21 graus) e ao alcance.
+// Tecnica: produto escalar entre a direcao ao item e o vetor "front" da camera.
+int aimedItem() {
+    int best = -1; float bestDot = 0.93f;
+    for (int i = 0; i < I_COUNT; i++) {
+        if (!itemActive(i)) continue;
+        glm::vec3 d = items[i].pos - camera.position;
+        float dist = glm::length(d);
+        if (dist > REACH || dist < 1e-3f) continue;
+        float dp = glm::dot(d / dist, camera.front);
+        if (dp > bestDot) { bestDot = dp; best = i; }
     }
     return best;
+}
+
+// Texto da dica "[E] ..." para o item apontado
+std::string promptFor(int id) {
+    switch (id) {
+        case I_DOOR:    return keyGot ? (doorTarget ? "[E] fechar a porta" : "[E] abrir a porta") : "[E] porta (trancada)";
+        case I_TV:      return tvOn ? "[E] desligar a TV" : "[E] ligar a TV";
+        case I_FAN:     return fanOn ? "[E] desligar o ventilador" : "[E] ligar o ventilador";
+        case I_LAMP:    return lampOn ? "[E] apagar o abajur" : "[E] acender o abajur";
+        case I_PUMPKIN: return pumpkinOn ? "[E] apagar as aboboras" : "[E] acender as aboboras";
+        case I_CANDLE0: case I_CANDLE1: case I_CANDLE2: return "[E] acender a vela";
+        case I_CANDY0: case I_CANDY1: case I_CANDY2:    return "[E] pegar o doce";
+        case I_CAULDRON: return "[E] examinar o caldeirao";
+        case I_KEY:     return "[E] pegar a chave";
+    }
+    return "";
+}
+
+// Tudo que acontece ao apertar E em um item
+void interact(int id) {
+    switch (id) {
+    case I_DOOR:
+        if (!keyGot) { say("A porta esta trancada... ache a chave!"); break; }
+        doorTarget = !doorTarget;
+        if (doorTarget && !escaped) { escaped = true; escapeTime = glfwGetTime(); }
+        break;
+    case I_TV:      tvOn = !tvOn; break;
+    case I_FAN:     fanOn = !fanOn; break;
+    case I_LAMP:    lampOn = !lampOn; break;
+    case I_PUMPKIN: pumpkinOn = !pumpkinOn; break;
+    case I_CANDLE0: case I_CANDLE1: case I_CANDLE2:
+        candleLit[id - I_CANDLE0] = true;
+        if (candlesLit() == 3) say("As velas formaram o circulo! Agora ache os doces perdidos.");
+        else say("Vela acesa (" + std::to_string(candlesLit()) + "/3)", 2.0);
+        break;
+    case I_CANDY0: case I_CANDY1: case I_CANDY2:
+        candyGot[id - I_CANDY0] = true;
+        say("Doce coletado (" + std::to_string(candyCount()) + "/3)", 2.0);
+        if (candyCount() == 3) say("Tem os 3 doces! Leve ao caldeirao.");
+        break;
+    case I_CAULDRON:
+        if (candlesLit() < 3)      say("O caldeirao esta frio... acenda as 3 velas da mesa.");
+        else if (candyCount() < 3) say("O caldeirao pede 3 doces (voce tem " + std::to_string(candyCount()) + ").");
+        else { potionDone = true; say("O caldeirao aceitou a oferenda! Uma chave surgiu..."); }
+        break;
+    case I_KEY:
+        keyGot = true;
+        say("Voce pegou a chave! A porta foi destrancada.");
+        break;
+    }
 }
 
 void framebuffer_size_callback(GLFWwindow*, int w, int h) { glViewport(0, 0, w, h); }
@@ -66,8 +164,8 @@ void mouse_callback(GLFWwindow*, double xpos, double ypos) {
 void key_callback(GLFWwindow*, int key, int, int action, int) {
     if (action != GLFW_PRESS) return;
     if (key == GLFW_KEY_E) {
-        int i = nearestItem();
-        if (i >= 0) *items[i].state = !*items[i].state;   // alterna o estado
+        int i = aimedItem();
+        if (i >= 0) interact(i);
     }
 }
 
@@ -83,7 +181,7 @@ void processInput(GLFWwindow* window) {
 }
 
 void drawObj(Shader& s, const Mesh& mesh, const glm::mat4& model, const Material& m,
-             unsigned int tex, glm::vec2 uvScale = glm::vec2(1.0f)) {
+             unsigned int tex, glm::vec2 uvScale = glm::vec2(1.0f), unsigned int nmap = 0) {
     s.setMat4("model", model);
     s.setVec3("material.ka", m.ka);
     s.setVec3("material.kd", m.kd);
@@ -93,6 +191,12 @@ void drawObj(Shader& s, const Mesh& mesh, const glm::mat4& model, const Material
     s.setVec2("uvScale", uvScale);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, tex);
+    s.setFloat("normalStrength", nmap ? 2.0f : 0.0f);   // 2.0 = relevo mais forte; 0 = sem relevo
+    if (nmap) {
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, nmap);
+        glActiveTexture(GL_TEXTURE0);
+    }
     mesh.draw();
 }
 
@@ -140,12 +244,16 @@ int main() {
     unsigned int texWood = loadTexture("assets/textures/wood.jpg");
     unsigned int texFloor = loadTexture("assets/textures/floor.jpg");
     unsigned int texWall = loadTexture("assets/textures/wall.jpg");
+    unsigned int nrmFloor = loadNormalMap("assets/textures/floor_normal.jpg");
+    unsigned int nrmWall  = loadNormalMap("assets/textures/wall_normal.jpg");
 
     // Materiais extras da TV
     Material tvFrame{{0.05f,0.05f,0.05f}, {0.1f,0.1f,0.1f}, {0.3f,0.3f,0.3f}, 32.0f};
     Material tvOff  {{0.02f,0.02f,0.02f}, {0.03f,0.03f,0.03f}, {0.8f,0.8f,0.8f}, 96.0f};
 
-    std::string lastTitle;
+    float escapeFade = 0.0f;
+    Hud hud;
+    double startTime = glfwGetTime();
 
     // =====================================================================
     //  Helpers de decoração (lambdas dentro do main, enxergam shader/meshes)
@@ -259,31 +367,31 @@ int main() {
         fanSpeed += ((fanOn ? 400.0f : 0.0f) - fanSpeed) * std::min(1.0f, deltaTime * 1.5f);
         fanAngle += fanSpeed * deltaTime;
 
-        // ---------- Dica no título da janela ----------
-        std::string title = "Sala 3D - Halloween";
-        int ni = nearestItem();
-        if (ni >= 0)
-            title += std::string("   |   [E] ") + items[ni].name +
-                     (*items[ni].state ? " (desligar/fechar)" : " (ligar/abrir)");
-        if (title != lastTitle) { glfwSetWindowTitle(window, title.c_str()); lastTitle = title; }
+        int aimed = aimedItem();   // item que o jogador está olhando (usado no HUD)
+
+        // fade do ambiente quando escapa (neblina clareia, amanhece)
+        escapeFade = approach(escapeFade, (escaped && doorTarget) ? 1.0f : 0.0f, deltaTime * 0.25f);
+        glm::vec3 fogCol = glm::mix(FOG_COLOR, glm::vec3(0.45f, 0.30f, 0.40f), escapeFade);
+        float fogDen = glm::mix(FOG_DENSITY, 0.08f, escapeFade);
 
         // ---------- Desenho ----------
-        glClearColor(FOG_COLOR.r, FOG_COLOR.g, FOG_COLOR.b, 1.0f);
+        glClearColor(fogCol.r, fogCol.g, fogCol.b, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         shader.use();
-        shader.setVec3("fogColor", FOG_COLOR);
-        shader.setFloat("fogDensity", FOG_DENSITY);
+        shader.setVec3("fogColor", fogCol);
+        shader.setFloat("fogDensity", fogDen);
         int w, h; glfwGetFramebufferSize(window, &w, &h);
         shader.setMat4("projection", glm::perspective(glm::radians(60.0f), (float)w / (float)(h > 0 ? h : 1), 0.1f, 100.0f));
         shader.setMat4("view", camera.getViewMatrix());
         shader.setVec3("viewPos", camera.position);
         shader.setInt("tex", 0);
+        shader.setInt("normalMap", 1);
 
         // ---- Luzes (o shader aceita até 4) ----
         float flicker  = 0.85f + 0.15f * std::sin(now * 9.0f);                           // TV "pisca"
         float flickerP = 0.80f + 0.20f * std::sin(now * 7.0f + 1.0f) * std::sin(now * 3.1f); // chama da abóbora
-        shader.setInt("numLights", 4);
+        shader.setInt("numLights", 8);
         shader.setVec3("lights[0].position", glm::vec3(0.0f, 1.3f, 0.0f));   // abajur (agora laranja)
         shader.setVec3("lights[0].color", lampOn ? glm::vec3(1.0f, 0.55f, 0.2f) * 1.5f : glm::vec3(0.0f));
         shader.setFloat("lights[0].linear", 0.09f);
@@ -300,17 +408,31 @@ int main() {
         shader.setVec3("lights[3].color", pumpkinOn ? glm::vec3(1.0f, 0.45f, 0.08f) * 1.4f * flickerP : glm::vec3(0.0f));
         shader.setFloat("lights[3].linear", 0.22f);
         shader.setFloat("lights[3].quadratic", 0.20f);
+        // luz do caldeirao: verde; roxa depois do ritual
+        shader.setVec3("lights[4].position", CAULDRON + glm::vec3(0.0f, 0.9f, 0.0f));
+        shader.setVec3("lights[4].color", (potionDone ? glm::vec3(0.7f, 0.25f, 1.0f) : glm::vec3(0.2f, 0.9f, 0.15f)) * (0.9f + 0.1f * std::sin(now * 3.0f)));
+        shader.setFloat("lights[4].linear", 0.22f);
+        shader.setFloat("lights[4].quadratic", 0.18f);
+        // uma luz pequena por vela (so quando acesa)
+        for (int i = 0; i < 3; i++) {
+            std::string L = "lights[" + std::to_string(5 + i) + "]";
+            float fl = 0.8f + 0.2f * std::sin(now * (8.0f + i * 1.7f) + i * 2.0f);
+            shader.setVec3(L + ".position", glm::vec3(CANDLE_XZ[i].x, 1.05f, CANDLE_XZ[i].y));
+            shader.setVec3(L + ".color", candleLit[i] ? glm::vec3(1.0f, 0.6f, 0.2f) * 0.8f * fl : glm::vec3(0.0f));
+            shader.setFloat(L + ".linear", 0.7f);
+            shader.setFloat(L + ".quadratic", 1.8f);
+        }
 
         // ---- Chão, teto e paredes ----
-        drawObj(shader, plane, makeModel({0, 0, 0}, {10, 1, 10}), Mat::floorDark(), texFloor, {5, 5});
-        drawObj(shader, cube, makeModel({0, 3.1f, 0}, {10.4f, 0.2f, 10.4f}), Mat::wallHalloween(), texWall, {3, 3});   // teto
-        drawObj(shader, cube, makeModel({0, 1.5f, -5}, {10, 3, 0.2f}), Mat::wallHalloween(), texWall, {3, 1});        // fundo
-        drawObj(shader, cube, makeModel({0, 1.5f, 5}, {10, 3, 0.2f}), Mat::wallHalloween(), texWall, {3, 1});         // frente
-        drawObj(shader, cube, makeModel({-5, 1.5f, 0}, {0.2f, 3, 10}), Mat::wallHalloween(), texWall, {3, 1});        // esquerda
+        drawObj(shader, plane, makeModel({0, 0, 0}, {10, 1, 10}), Mat::floorDark(), texFloor, {5, 5}, nrmFloor);
+        drawObj(shader, cube, makeModel({0, 3.1f, 0}, {10.4f, 0.2f, 10.4f}), Mat::wallHalloween(), texWall, {3, 3}, nrmWall);   // teto
+        drawObj(shader, cube, makeModel({0, 1.5f, -5}, {10, 3, 0.2f}), Mat::wallHalloween(), texWall, {3, 1}, nrmWall);        // fundo
+        drawObj(shader, cube, makeModel({0, 1.5f, 5}, {10, 3, 0.2f}), Mat::wallHalloween(), texWall, {3, 1}, nrmWall);         // frente
+        drawObj(shader, cube, makeModel({-5, 1.5f, 0}, {0.2f, 3, 10}), Mat::wallHalloween(), texWall, {3, 1}, nrmWall);        // esquerda
         // parede direita em 3 pedaços, deixando um vão de porta (z de 1 a 2, altura 2.2)
-        drawObj(shader, cube, makeModel({5, 1.5f, -2.0f}, {0.2f, 3, 6}), Mat::wallHalloween(), texWall, {2, 1});
-        drawObj(shader, cube, makeModel({5, 1.5f, 3.5f}, {0.2f, 3, 3}), Mat::wallHalloween(), texWall, {1, 1});
-        drawObj(shader, cube, makeModel({5, 2.6f, 1.5f}, {0.2f, 0.8f, 1}), Mat::wallHalloween(), texWall);
+        drawObj(shader, cube, makeModel({5, 1.5f, -2.0f}, {0.2f, 3, 6}), Mat::wallHalloween(), texWall, {2, 1}, nrmWall);
+        drawObj(shader, cube, makeModel({5, 1.5f, 3.5f}, {0.2f, 3, 3}), Mat::wallHalloween(), texWall, {1, 1}, nrmWall);
+        drawObj(shader, cube, makeModel({5, 2.6f, 1.5f}, {0.2f, 0.8f, 1}), Mat::wallHalloween(), texWall, glm::vec2(1.0f), nrmWall);
 
         // ---- Porta: HIERARQUIA (a dobradiça é a origem local) ----
         glm::mat4 doorBase(1.0f);
@@ -384,12 +506,15 @@ int main() {
         }
 
         // ---- Velas na mesa (chama tremulando, cada uma com fase própria) ----
-        glm::vec2 candles[3] = {{-0.7f, -0.28f}, {0.65f, 0.3f}, {0.2f, -0.3f}};
+        const glm::vec2* candles = CANDLE_XZ;
         for (int i = 0; i < 3; i++) {
             float fl = 0.8f + 0.2f * std::sin(now * (8.0f + i * 1.7f) + i * 2.0f);
             drawObj(shader, cylinder, makeModel({candles[i].x, 0.87f, candles[i].y}, {0.05f, 0.14f, 0.05f}), Mat::wax(), white);
-            drawObj(shader, sphere, makeModel({candles[i].x, 0.98f, candles[i].y}, {0.035f, 0.07f * fl + 0.03f, 0.035f}),
-                    Mat::glowing(glm::vec3(1.0f, 0.7f, 0.2f) * fl), white);
+            if (candleLit[i])   // so tem chama depois que o jogador acende
+                drawObj(shader, sphere, makeModel({candles[i].x, 0.98f, candles[i].y}, {0.035f, 0.07f * fl + 0.03f, 0.035f}),
+                        Mat::glowing(glm::vec3(1.0f, 0.7f, 0.2f) * fl), white);
+            else   // pavio apagado
+                drawObj(shader, cylinder, makeModel({candles[i].x, 0.96f, candles[i].y}, {0.008f, 0.04f, 0.008f}), Mat::black(), white);
         }
 
         // ---- Caldeirão borbulhante ----
@@ -398,14 +523,14 @@ int main() {
             drawObj(shader, sphere,   makeModel(cp + glm::vec3(0, 0.30f, 0), {0.85f, 0.60f, 0.85f}), Mat::black(), white);
             drawObj(shader, cylinder, makeModel(cp + glm::vec3(0, 0.55f, 0), {0.78f, 0.20f, 0.78f}), Mat::black(), white);
             drawObj(shader, cylinder, makeModel(cp + glm::vec3(0, 0.66f, 0), {0.62f, 0.02f, 0.62f}),
-                    Mat::glowing(glm::vec3(0.2f, 0.9f, 0.15f) * (0.8f + 0.2f * std::sin(now * 3.0f))), white);
+                    Mat::glowing((potionDone ? glm::vec3(0.7f, 0.25f, 1.0f) : glm::vec3(0.2f, 0.9f, 0.15f)) * (0.8f + 0.2f * std::sin(now * 3.0f))), white);
             // bolhas subindo
             for (int i = 0; i < 4; i++) {
                 float t = std::fmod(now * 0.45f + i * 0.25f, 1.0f);
                 float a = i * 1.9f;
                 glm::vec3 bp = cp + glm::vec3(0.12f * std::cos(a), 0.68f + t * 0.45f, 0.12f * std::sin(a));
                 float sz = 0.07f * (1.0f - t * 0.6f);
-                drawObj(shader, sphere, makeModel(bp, glm::vec3(sz)), Mat::glowing(glm::vec3(0.3f, 1.0f, 0.2f)), white);
+                drawObj(shader, sphere, makeModel(bp, glm::vec3(sz)), Mat::glowing(potionDone ? glm::vec3(0.8f, 0.4f, 1.0f) : glm::vec3(0.3f, 1.0f, 0.2f)), white);
             }
             // pezinhos
             for (int i = 0; i < 3; i++) {
@@ -472,7 +597,7 @@ int main() {
             float yaw = std::atan2(camera.position.x - gp.x, camera.position.z - gp.z);
             glm::mat4 gb = glm::translate(glm::mat4(1.0f), gp);
             gb = glm::rotate(gb, yaw, glm::vec3(0, 1, 0));
-            Material gm = Mat::glowing(glm::vec3(0.42f, 0.48f, 0.62f));
+            Material gm = Mat::glowing(potionDone ? glm::vec3(0.55f, 0.75f, 0.55f) : glm::vec3(0.42f, 0.48f, 0.62f));   // fica "em paz" depois do ritual
             drawObj(shader, sphere,   glm::scale(gb, {0.55f, 0.65f, 0.55f}), gm, white);
             drawObj(shader, cylinder, glm::scale(glm::translate(gb, {0, -0.2f, 0}), {0.55f, 0.45f, 0.55f}), gm, white);
             for (int i = 0; i < 8; i++) {   // barra ondulada da "saia"
@@ -487,6 +612,83 @@ int main() {
                 drawObj(shader, sphere, glm::scale(arm, {0.10f, 0.22f, 0.10f}), gm, white);
             }
             drawObj(shader, sphere, glm::scale(glm::translate(gb, {0, -0.08f, 0.25f}), {0.08f, 0.12f, 0.04f}), Mat::black(), white);
+        }
+
+        // =================================================================
+        //                    OBJETOS DA MISSAO
+        // =================================================================
+        // Doces: giram e sobem/descem levemente; somem quando coletados
+        for (int i = 0; i < 3; i++) {
+            if (candyGot[i]) continue;
+            glm::vec3 cp = CANDY_POS[i] + glm::vec3(0, 0.05f * std::sin(now * 2.0f + i), 0);
+            glm::mat4 cb = glm::rotate(glm::translate(glm::mat4(1.0f), cp), now * 1.5f + i, glm::vec3(0, 1, 0));
+            Material body = Mat::glowing(glm::vec3(1.0f, 0.45f, 0.05f) * 0.8f);
+            drawObj(shader, sphere, glm::scale(cb, {0.16f, 0.09f, 0.09f}), body, white);          // bala
+            for (int sx = -1; sx <= 1; sx += 2) {                                                   // pontas do papel
+                glm::mat4 w = glm::translate(cb, {sx * 0.11f, 0, 0});
+                w = glm::rotate(w, glm::radians(45.0f), glm::vec3(1, 0, 0));
+                drawObj(shader, cube, glm::scale(w, {0.05f, 0.07f, 0.07f}), Mat::glowing(glm::vec3(0.6f, 0.2f, 0.9f) * 0.8f), white);
+            }
+        }
+        // Chave dourada: aparece sobre o caldeirao depois do ritual
+        if (potionDone && !keyGot) {
+            glm::vec3 kp = KEY_POS + glm::vec3(0, 0.08f * std::sin(now * 2.5f), 0);
+            glm::mat4 kb = glm::rotate(glm::translate(glm::mat4(1.0f), kp), now * 1.2f, glm::vec3(0, 1, 0));
+            Material gold{{0.30f, 0.22f, 0.05f}, {0.80f, 0.60f, 0.10f}, {1.0f, 0.9f, 0.4f}, 64.0f, {0.35f, 0.25f, 0.02f}};
+            glm::mat4 head = glm::rotate(glm::translate(kb, {0, 0.17f, 0}), glm::radians(90.0f), glm::vec3(1, 0, 0));
+            drawObj(shader, cylinder, glm::scale(head, {0.14f, 0.03f, 0.14f}), gold, white);        // argola
+            drawObj(shader, cylinder, glm::scale(glm::translate(head, {0, 0, 0}), {0.06f, 0.04f, 0.06f}), Mat::black(), white); // furo
+            drawObj(shader, cube, glm::scale(glm::translate(kb, {0, -0.03f, 0}), {0.035f, 0.32f, 0.035f}), gold, white);        // haste
+            drawObj(shader, cube, glm::scale(glm::translate(kb, {0.05f, -0.14f, 0}), {0.08f, 0.035f, 0.035f}), gold, white);   // dentes
+            drawObj(shader, cube, glm::scale(glm::translate(kb, {0.04f, -0.08f, 0}), {0.06f, 0.035f, 0.035f}), gold, white);
+        }
+
+        // =================================================================
+        //                              HUD
+        // =================================================================
+        {
+            hud.begin(w, h);
+            float cx = w / 2.0f, cy = h / 2.0f;
+            const glm::vec3 WHITE(1), GREY(0.6f), GREEN(0.55f, 1.0f, 0.55f), ORANGE(1.0f, 0.65f, 0.15f);
+
+            // painel da missao
+            bool done[5] = {candlesLit() == 3, candyCount() == 3, potionDone, keyGot, escaped};
+            int cur = 0; while (cur < 5 && done[cur]) cur++;
+            std::string lines[5] = {
+                std::string(done[0] ? "[x] " : "[ ] ") + "Acender as velas  " + std::to_string(candlesLit()) + "/3",
+                std::string(done[1] ? "[x] " : "[ ] ") + "Achar os doces    " + std::to_string(candyCount()) + "/3",
+                std::string(done[2] ? "[x] " : "[ ] ") + "Ritual no caldeirao",
+                std::string(done[3] ? "[x] " : "[ ] ") + "Pegar a chave",
+                std::string(done[4] ? "[x] " : "[ ] ") + "Fugir pela porta"};
+            hud.rect(12, 12, 330, 156, glm::vec4(0, 0, 0, 0.55f));
+            hud.text(24, 22, "MISSAO: QUEBRE A MALDICAO", 2.0f, ORANGE);
+            for (int i = 0; i < 5; i++)
+                hud.text(24, 52 + i * 22, lines[i], 2.0f, done[i] ? GREEN : (i == cur ? WHITE : GREY));
+
+            // cronometro
+            double t = (escaped ? escapeTime : glfwGetTime()) - startTime;
+            char tb[16]; std::snprintf(tb, sizeof(tb), "%02d:%02d", (int)t / 60, (int)t % 60);
+            hud.rect(w - 112, 12, 100, 34, glm::vec4(0, 0, 0, 0.55f));
+            hud.text(w - 100, 20, tb, 3.0f, WHITE);
+
+            // mira + dica do item apontado
+            hud.text(cx - 5, cy - 8, "+", 2.0f, aimed >= 0 ? ORANGE : glm::vec3(1, 1, 1));
+            if (aimed >= 0) hud.textCentered(cx, cy + 24, promptFor(aimed), 2.5f, ORANGE);
+
+            // mensagem temporaria
+            if (glfwGetTime() < toastUntil) {
+                float tw = hud.width(toast, 2.5f);
+                hud.rect(cx - tw / 2 - 14, h - 84, tw + 28, 40, glm::vec4(0, 0, 0, 0.6f));
+                hud.textCentered(cx, h - 74, toast, 2.5f, WHITE);
+            }
+
+            // tela de vitoria
+            if (escaped && doorTarget) {
+                hud.rect(0, cy - 70, (float)w, 130, glm::vec4(0, 0, 0, 0.6f));
+                hud.textCentered(cx, cy - 56, "VOCE ESCAPOU!", 7.0f, ORANGE);
+                hud.textCentered(cx, cy + 20, std::string("Feliz Halloween!  Tempo: ") + tb, 3.0f, WHITE);
+            }
+            hud.end();
         }
 
         glfwSwapBuffers(window);

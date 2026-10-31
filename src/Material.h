@@ -16,9 +16,9 @@ namespace Mat {
 
     // ---------- Halloween ----------
     // Parede arroxeada e escura (a textura ainda aparece, só que tingida)
-    inline Material wallHalloween() { return {{0.14f,0.09f,0.20f}, {0.55f,0.42f,0.70f}, {0.02f,0.02f,0.02f}, 2.0f}; }
+    inline Material wallHalloween() { return {{0.14f,0.09f,0.20f}, {0.55f,0.42f,0.70f}, {0.15f,0.15f,0.15f}, 16.0f}; }
     // Chão de madeira escurecida
-    inline Material floorDark()     { return {{0.12f,0.10f,0.12f}, {0.50f,0.40f,0.45f}, {0.05f,0.05f,0.05f}, 8.0f}; }
+    inline Material floorDark()     { return {{0.12f,0.10f,0.12f}, {0.50f,0.40f,0.45f}, {0.25f,0.25f,0.25f}, 32.0f}; }
     inline Material pumpkin() { return {{0.30f,0.12f,0.02f}, {0.95f,0.42f,0.05f}, {0.25f,0.20f,0.10f}, 24.0f}; }
     inline Material stem()    { return {{0.10f,0.15f,0.03f}, {0.28f,0.42f,0.10f}, {0.05f,0.05f,0.05f}, 4.0f}; }
     inline Material bone()    { return {{0.30f,0.30f,0.25f}, {0.85f,0.82f,0.70f}, {0.20f,0.20f,0.20f}, 16.0f}; }

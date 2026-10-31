@@ -54,3 +54,21 @@ inline unsigned int loadTexture(const std::string& path) {
     stbi_image_free(data);
     return id;
 }
+
+// Mapa de normais: dados (não cor!), então vão em formato LINEAR (GL_RGBA8), sem conversão sRGB.
+// Retorna 0 se o arquivo não existir (o programa então desenha sem relevo).
+inline unsigned int loadNormalMap(const std::string& path) {
+    int w, h, n;
+    stbi_set_flip_vertically_on_load(true);
+    unsigned char* data = stbi_load(path.c_str(), &w, &h, &n, 4);
+    if (!data) {
+        std::cerr << "Nao consegui carregar mapa de normais: " << path << "\n";
+        return 0;
+    }
+    unsigned int id; glGenTextures(1, &id);
+    glBindTexture(GL_TEXTURE_2D, id);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    setTexParams();
+    stbi_image_free(data);
+    return id;
+}

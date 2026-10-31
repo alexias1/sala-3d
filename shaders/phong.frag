@@ -19,12 +19,14 @@ struct Light {
     float quadratic;
 };
 
-#define MAX_LIGHTS 4
+#define MAX_LIGHTS 8
 uniform Material material;
 uniform Light lights[MAX_LIGHTS];
 uniform int numLights;
 uniform vec3 viewPos;
 uniform sampler2D tex;
+uniform sampler2D normalMap;     // mapa de normais (unidade de textura 1)
+uniform float normalStrength;    // 0 = objeto sem relevo; 1 = relevo normal
 
 // Neblina (cor "como aparece na tela"; o shader converte para linear)
 uniform vec3 fogColor;
@@ -40,8 +42,26 @@ const float GAMMA = 2.2;
 // convertemos para linear antes de calcular a luz.
 vec3 toLinear(vec3 c) { return pow(c, vec3(GAMMA)); }
 
+// Normal mapping SEM tangentes pré-calculadas: a base (T, B, N) da superfície é
+// deduzida das derivadas na tela da posição e da UV (dFdx/dFdy).
+mat3 cotangentFrame(vec3 N, vec3 p, vec2 uv) {
+    vec3 dp1 = dFdx(p), dp2 = dFdy(p);
+    vec2 duv1 = dFdx(uv), duv2 = dFdy(uv);
+    vec3 dp2perp = cross(dp2, N);
+    vec3 dp1perp = cross(N, dp1);
+    vec3 T = dp2perp * duv1.x + dp1perp * duv2.x;
+    vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
+    float invmax = inversesqrt(max(dot(T, T), dot(B, B)));
+    return mat3(T * invmax, B * invmax, N);
+}
+
 void main() {
     vec3 N = normalize(Normal);
+    if (normalStrength > 0.0) {
+        vec3 n = texture(normalMap, UV).rgb * 2.0 - 1.0;   // [0,1] -> [-1,1]
+        n.xy *= normalStrength;                            // controla a "força" do relevo
+        N = normalize(cotangentFrame(N, FragPos, UV) * n); // do espaço da textura para o mundo
+    }
     vec3 V = normalize(viewPos - FragPos);
 
     // A textura é carregada como sRGB, então o hardware já entrega o valor em linear

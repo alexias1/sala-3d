@@ -15,3 +15,9 @@ FetchContent_MakeAvailable(glfw glm)
 add_executable(sala src/main.cpp external/glad/src/glad.c)
 target_include_directories(sala PRIVATE external/glad/include external/stb)
 target_link_libraries(sala PRIVATE glfw glm::glm)
+
+add_custom_command(TARGET sala POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_SOURCE_DIR}/shaders $<TARGET_FILE_DIR:sala>/shaders
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_SOURCE_DIR}/assets $<TARGET_FILE_DIR:sala>/assets)
