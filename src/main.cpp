@@ -23,7 +23,7 @@ float lastX = SCR_W / 2.0f, lastY = SCR_H / 2.0f;
 bool firstMouse = true;
 float deltaTime = 0.0f, lastFrame = 0.0f;
 
-bool lampOn = true, tvOn = false, fanOn = false, doorTarget = false, pumpkinOn = true;
+bool crystalOn = false, tvOn = false, fanOn = false, doorTarget = false, pumpkinOn = false;
 float doorOpen = 0.0f;
 float fanSpeed = 0.0f;
 float fanAngle = 0.0f;
@@ -36,7 +36,6 @@ bool keyGot = false;
 bool escaped = false;
 
 bool tombInspected[3] = {false, false, false};
-double spiritHintAt = -1.0;
 
 // Tarot: tres cartas reveladas em sequencia, com sorteio ao embaralhar.
 int cardStage = 0;
@@ -73,6 +72,13 @@ void shuffleDeck()
 }
 bool ghostFound[3] = {false, false, false};
 
+// A peca triangular alterna de lado quando o jogador consulta o tabuleiro.
+bool ouijaRight = false;
+float ouijaSlide = -0.23f;
+float ouijaSlideFrom = -0.23f;
+float ouijaSlideTo = -0.23f;
+double ouijaMoveAt = -10.0;
+
 double eyesHiddenUntil = 0.0;
 double escapeTime = 0.0;
 std::string toast;
@@ -89,6 +95,7 @@ const glm::vec2 CANDLE_XZ[3] = {{-0.7f, -0.28f}, {0.65f, 0.3f}, {0.2f, -0.3f}};
 const glm::vec3 CANDY_POS[3] = {{-3.9f, 0.15f, -3.2f}, {0.58f, 0.78f, 4.52f}, {-1.2f, 0.15f, -3.8f}};
 const glm::vec3 CAULDRON(3.3f, 0.0f, -2.0f);
 const glm::vec3 KEY_POS = CAULDRON + glm::vec3(0.0f, 1.35f, 0.0f);
+const glm::vec3 OUIJA_POS(3.10f, 0.054f, 3.45f);
 
 const char *STUDENT_NAMES[3] = {
     "Alexia Rodrigues", "Barbara Albuquerque", "Lara Nogueira"};
@@ -99,7 +106,7 @@ const glm::vec3 TOMB_POS[3] = {
 const glm::vec3 GHOST_POS[3] = {
     {-3.0f, 1.50f, -3.60f},
     {-3.0f, 1.50f, 4.0f},
-    {3.2f, 1.50f, 3.25f}};
+    {4.10f, 1.50f, 4.05f}};
 
 const glm::vec3 GHOST_COLORS[3] = {
     {0.42f, 0.48f, 0.62f},
@@ -127,7 +134,7 @@ enum ItemId
     I_DOOR,
     I_TV,
     I_FAN,
-    I_LAMP,
+    I_CRYSTAL,
     I_PUMPKIN,
     I_CANDLE0,
     I_CANDLE1,
@@ -145,6 +152,8 @@ enum ItemId
     I_GHOST2,
     I_CARDS,
     I_WINDOW,
+    I_PENTAGRAM,
+    I_OUIJA,
     I_COUNT
 };
 struct Interactable
@@ -156,7 +165,7 @@ Interactable items[I_COUNT] = {
     {"porta", {5.0f, 1.0f, 1.5f}},
     {"TV", {2.5f, 1.2f, -4.8f}},
     {"ventilador", {-2.5f, 2.8f, -2.5f}},
-    {"abajur", {0.0f, 1.3f, 0.0f}},
+    {"bola de cristal", {0.0f, 1.12f, 0.0f}},
     {"abobora", {-3.2f, 0.4f, 2.2f}},
     {"vela", {CANDLE_XZ[0].x, 0.95f, CANDLE_XZ[0].y}},
     {"vela", {CANDLE_XZ[1].x, 0.95f, CANDLE_XZ[1].y}},
@@ -173,8 +182,10 @@ Interactable items[I_COUNT] = {
     {"fantasma", GHOST_POS[1]},
     {"fantasma", GHOST_POS[2]},
     {"cartas", {0.45f, 0.87f, 0.0f}},
-    {"janela", {-1.80f, 1.80f, -4.83f}}};
-const float REACH = 3.0f;
+    {"janela", {-1.80f, 1.80f, -4.83f}},
+    {"pentagrama", {4.875f, 1.62f, -0.35f}},
+    {"tabuleiro ouija", {OUIJA_POS.x, 0.13f, OUIJA_POS.z}}};
+const float REACH = 1.9f;
 int candlesLit() { return (int)candleLit[0] + (int)candleLit[1] + (int)candleLit[2]; }
 int candyCount() { return (int)candyGot[0] + (int)candyGot[1] + (int)candyGot[2]; }
 int tombCount() { return (int)tombInspected[0] + (int)tombInspected[1] + (int)tombInspected[2]; }
@@ -251,8 +262,8 @@ std::string promptFor(int id)
         return tvOn ? "[E] desligar a TV" : "[E] ligar a TV";
     case I_FAN:
         return fanOn ? "[E] desligar o ventilador" : "[E] ligar o ventilador";
-    case I_LAMP:
-        return lampOn ? "[E] apagar o abajur" : "[E] acender o abajur";
+    case I_CRYSTAL:
+        return crystalOn ? "[E] desligar bola de cristal magica" : "[E] ligar bola de cristal magica";
     case I_PUMPKIN:
         return pumpkinOn ? "[E] apagar as aboboras" : "[E] acender as aboboras";
     case I_CANDLE0:
@@ -286,6 +297,10 @@ std::string promptFor(int id)
         return "[E] embaralhar as cartas";
     case I_WINDOW:
         return "[E] voce tambem viu?";
+    case I_PENTAGRAM:
+        return "[E] examinar o pentagrama";
+    case I_OUIJA:
+        return "[E] falar com o espirito";
     }
     return "";
 }
@@ -324,8 +339,8 @@ void interact(int id)
     case I_FAN:
         fanOn = !fanOn;
         break;
-    case I_LAMP:
-        lampOn = !lampOn;
+    case I_CRYSTAL:
+        crystalOn = !crystalOn;
         break;
     case I_PUMPKIN:
         pumpkinOn = !pumpkinOn;
@@ -373,7 +388,10 @@ void interact(int id)
 
         if (tombInspected[i])
         {
-            say(std::string("Aqui jaz ") + STUDENT_NAMES[i] + ".", 4.0);
+            if (tombCount() == 3)
+                say("Aqui jazem tres alunas... procure seus espiritos!", 5.0);
+            else
+                say(std::string("Aqui jaz ") + STUDENT_NAMES[i] + ".", 4.0);
             break;
         }
 
@@ -382,11 +400,6 @@ void interact(int id)
         say(std::string("Aqui jaz ") + STUDENT_NAMES[i] + ". (" +
                 std::to_string(tombCount()) + "/3)",
             4.5);
-
-        if (tombCount() == 3)
-        {
-            spiritHintAt = glfwGetTime() + 4.5;
-        }
 
         break;
     }
@@ -439,6 +452,16 @@ void interact(int id)
 
         eyesHiddenUntil = glfwGetTime() + 6.0;
         say("Voce tambem viu? Algo nos observava entre as lapides...", 5.0);
+        break;
+    case I_PENTAGRAM:
+        say("Para conquistar sua liberdade, complete o ritual das tres chamas...", 5.5);
+        break;
+    case I_OUIJA:
+        ouijaRight = !ouijaRight;
+        ouijaSlideFrom = ouijaSlide;
+        ouijaSlideTo = ouijaRight ? 0.23f : -0.23f;
+        ouijaMoveAt = glfwGetTime();
+        say("03/11... hoje eu faria aniversario...", 5.0);
         break;
     }
 }
@@ -549,9 +572,6 @@ int main()
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_MULTISAMPLE);
     Shader shader("shaders/phong.vert", "shaders/phong.frag");
-    Shader crystalGlowShader(
-        "shaders/crystal_glow.vert",
-        "shaders/crystal_glow.frag");
 
     Shader groundFogShader("shaders/phong.vert", "shaders/ground_fog.frag");
     Shader moonBeamShader("shaders/phong.vert", "shaders/moon_beam.frag");
@@ -565,6 +585,67 @@ int main()
     Mesh sphere = Mesh::sphere();
 
     Mesh skySphere = Mesh::sphere(48, 96);
+
+    // Tampa texturizada do tabuleiro, voltada para cima.
+    std::vector<Vertex> ouijaTopVertices = {
+        {{-0.5f, 0.0f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+        {{0.5f, 0.0f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+        {{0.5f, 0.0f, 0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f}},
+        {{-0.5f, 0.0f, 0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f}}};
+    Mesh ouijaTop(ouijaTopVertices, {0, 2, 1, 0, 3, 2});
+
+    // Peca triangular com abertura central verdadeira, nao apenas desenhada.
+    constexpr int PLANCHETTE_SEGMENTS = 64;
+    std::vector<Vertex> planchetteVerts;
+    std::vector<unsigned int> planchetteIdx;
+    planchetteVerts.reserve(PLANCHETTE_SEGMENTS * 4);
+    planchetteIdx.reserve(PLANCHETTE_SEGMENTS * 24);
+    const glm::vec2 triangle[3] = {
+        {0.0f, -0.20f}, {0.185f, 0.13f}, {-0.185f, 0.13f}};
+    auto cross2D = [](glm::vec2 a, glm::vec2 b)
+    {
+        return a.x * b.y - a.y * b.x;
+    };
+    for (int i = 0; i < PLANCHETTE_SEGMENTS; ++i)
+    {
+        const float angle = 2.0f * PI_F * i / PLANCHETTE_SEGMENTS;
+        const glm::vec2 ray(std::cos(angle), std::sin(angle));
+        float rayLength = 1.0f;
+        for (int e = 0; e < 3; ++e)
+        {
+            glm::vec2 a = triangle[e];
+            glm::vec2 edge = triangle[(e + 1) % 3] - a;
+            const float den = cross2D(ray, edge);
+            if (std::fabs(den) < 1.0e-6f)
+                continue;
+            float dist = cross2D(a, edge) / den;
+            float edgeT = cross2D(a, ray) / den;
+            if (dist > 0.0f && edgeT >= 0.0f && edgeT <= 1.0f)
+                rayLength = std::min(rayLength, dist);
+        }
+        glm::vec2 outer = ray * (rayLength * 0.96f);
+        glm::vec2 inner = ray * 0.058f;
+        auto uv = [](glm::vec2 p)
+        {
+            return glm::vec2(0.5f - p.x / 0.50f, 0.5f + p.y / 0.50f);
+        };
+        planchetteVerts.push_back({{outer.x, 0.020f, outer.y}, {0, 1, 0}, uv(outer)});
+        planchetteVerts.push_back({{inner.x, 0.020f, inner.y}, {0, 1, 0}, uv(inner)});
+        planchetteVerts.push_back({{outer.x, 0.001f, outer.y}, {0, -1, 0}, uv(outer)});
+        planchetteVerts.push_back({{inner.x, 0.001f, inner.y}, {0, -1, 0}, uv(inner)});
+    }
+    for (int i = 0; i < PLANCHETTE_SEGMENTS; ++i)
+    {
+        unsigned int a = (unsigned int)(i * 4);
+        unsigned int b = (unsigned int)(((i + 1) % PLANCHETTE_SEGMENTS) * 4);
+        planchetteIdx.insert(planchetteIdx.end(), {
+                                                      a, a + 1, b, b, a + 1, b + 1,             // topo
+                                                      a + 2, b + 2, a + 3, b + 2, b + 3, a + 3, // base
+                                                      a, b, a + 2, b, b + 2, a + 2,             // borda externa
+                                                      a + 1, a + 3, b + 1, b + 1, a + 3, b + 3  // contorno da abertura
+                                                  });
+    }
+    Mesh ouijaPlanchette(planchetteVerts, planchetteIdx);
 
     // Relevo circular distante: evita bordas visiveis pela janela.
     constexpr int MOUNTAIN_SEGMENTS = 192;
@@ -662,6 +743,8 @@ int main()
     unsigned int nrmFloor = loadNormalMap("assets/textures/floor_normal.jpg");
     unsigned int nrmWall = loadNormalMap("assets/textures/wall_normal.jpg");
     unsigned int texMoon = loadTexture("assets/textures/textura_lua.jpg");
+    unsigned int texOuijaBoard = loadTexture("assets/textures/ouija_board.png");
+    unsigned int texOuijaPlanchette = loadTexture("assets/textures/ouija_planchette.png");
 
     Material tvFrame{{0.05f, 0.05f, 0.05f}, {0.1f, 0.1f, 0.1f}, {0.3f, 0.3f, 0.3f}, 32.0f};
     Material tvOff{{0.02f, 0.02f, 0.02f}, {0.03f, 0.03f, 0.03f}, {0.8f, 0.8f, 0.8f}, 96.0f};
@@ -756,12 +839,6 @@ int main()
     {
         float now = (float)glfwGetTime();
 
-        if (spiritHintAt >= 0.0 && glfwGetTime() >= spiritHintAt)
-        {
-            say("Aqui jazem tres alunas... procure seus espiritos!", 5.0);
-            spiritHintAt = -1.0;
-        }
-
         if (cardHintAt >= 0.0 && glfwGetTime() >= cardHintAt)
         {
             say(std::string("O destino sussurra: ") + destinyHint(), 6.0);
@@ -815,6 +892,9 @@ int main()
             if (hitBox(x, z, {0.60f, 4.68f}, {0.75f, 0.225f}))
                 return true;
 
+            if (hitBox(x, z, {OUIJA_POS.x, OUIJA_POS.z}, {0.67f, 0.425f}))
+                return true;
+
             for (int i = 0; i < 3; ++i)
             {
                 if (hitBox(x, z, {TOMB_POS[i].x, TOMB_POS[i].z}, {0.14f, 0.30f}))
@@ -858,6 +938,12 @@ int main()
         float doorAngle = -95.0f * s;
         fanSpeed += ((fanOn ? 400.0f : 0.0f) - fanSpeed) * std::min(1.0f, deltaTime * 1.5f);
         fanAngle += fanSpeed * deltaTime;
+        if (ouijaMoveAt >= 0.0)
+        {
+            float t = glm::clamp((float)((glfwGetTime() - ouijaMoveAt) / 1.6), 0.0f, 1.0f);
+            float ease = t * t * (3.0f - 2.0f * t);
+            ouijaSlide = glm::mix(ouijaSlideFrom, ouijaSlideTo, ease);
+        }
         int aimed = aimedItem();
 
         escapeFade = approach(escapeFade, (escaped && doorTarget) ? 1.0f : 0.0f, deltaTime * 0.25f);
@@ -887,14 +973,14 @@ int main()
 
         float flicker = 0.85f + 0.15f * std::sin(now * 9.0f);
         float flickerP = 0.80f + 0.20f * std::sin(now * 7.0f + 1.0f) * std::sin(now * 3.1f);
-        // Treze luzes de ponto: abajur, TV, aboboras, caldeirao, velas e cristal.
+        // Luzes de ponto: cristal da mesa, TV, aboboras, caldeirao e velas.
         shader.setInt("numLights", 13);
-        shader.setVec3("lights[0].position", glm::vec3(0.0f, 1.3f, 0.0f));
-        shader.setVec3("lights[0].color", lampOn ? glm::vec3(1.0f, 0.55f, 0.2f) * 1.5f : glm::vec3(0.0f));
+        shader.setVec3("lights[0].position", glm::vec3(0.0f, 1.16f, 0.0f));
+        shader.setVec3("lights[0].color", crystalOn ? glm::vec3(1.0f, 0.55f, 0.2f) * 1.5f : glm::vec3(0.0f));
         shader.setFloat("lights[0].linear", 0.09f);
         shader.setFloat("lights[0].quadratic", 0.032f);
         shader.setVec3("lights[1].position", glm::vec3(0.0f, 2.8f, 2.0f));
-        shader.setVec3("lights[1].color", glm::vec3(0.30f, 0.14f, 0.45f));
+        shader.setVec3("lights[1].color", glm::vec3(0.0f)); // O luar direcional ja ilumina a janela.
         shader.setFloat("lights[1].linear", 0.09f);
         shader.setFloat("lights[1].quadratic", 0.032f);
         shader.setVec3("lights[2].position", glm::vec3(2.5f, 1.2f, -4.0f));
@@ -907,7 +993,9 @@ int main()
         shader.setFloat("lights[3].quadratic", 0.20f);
 
         shader.setVec3("lights[4].position", CAULDRON + glm::vec3(0.0f, 0.9f, 0.0f));
-        shader.setVec3("lights[4].color", (potionDone ? glm::vec3(0.7f, 0.25f, 1.0f) : glm::vec3(0.2f, 0.9f, 0.15f)) * (0.9f + 0.1f * std::sin(now * 3.0f)));
+        shader.setVec3("lights[4].color", candlesLit() == 3
+                                              ? (potionDone ? glm::vec3(0.7f, 0.25f, 1.0f) : glm::vec3(0.2f, 0.9f, 0.15f)) * (0.9f + 0.1f * std::sin(now * 3.0f))
+                                              : glm::vec3(0.0f));
         shader.setFloat("lights[4].linear", 0.22f);
         shader.setFloat("lights[4].quadratic", 0.18f);
 
@@ -921,10 +1009,9 @@ int main()
             shader.setFloat(L + ".quadratic", 1.8f);
         }
 
-        const float crystalLightPulse = 0.84f + 0.16f * std::sin(now * 1.5f);
+        // A bola roxa da estante e decorativa: sem luz de ponto.
         shader.setVec3("lights[8].position", glm::vec3(0.83f, 1.455f, 4.47f));
-        shader.setVec3("lights[8].color",
-                       glm::vec3(0.55f, 0.22f, 0.78f) * crystalLightPulse);
+        shader.setVec3("lights[8].color", glm::vec3(0.0f));
         shader.setFloat("lights[8].linear", 1.5f);
         shader.setFloat("lights[8].quadratic", 8.0f);
 
@@ -1322,7 +1409,7 @@ int main()
                                });
 
             {
-                // Bola de cristal com emissao roxa discreta e aura propria.
+                // Bola de cristal roxa apenas decorativa, sem brilho proprio.
                 const float crystalX = 0.83f;
                 glm::mat4 base = glm::translate(glm::mat4(1.0f),
                                                 glm::vec3(crystalX, s2, z));
@@ -1331,9 +1418,6 @@ int main()
                 Material brass = mk({0.65f, 0.48f, 0.23f});
                 Material crystal = mk({0.31f, 0.19f, 0.64f},
                                       {0.62f, 0.55f, 0.85f}, 96.0f);
-
-                const float crystalPulse = 0.84f + 0.16f * std::sin(now * 1.5f);
-                crystal.emissive = glm::vec3(0.13f, 0.07f, 0.26f) * crystalPulse;
 
                 drawObj(shader, cylinder,
                         part(base, {0.0f, 0.004f, 0.0f}, {0.25f, 0.008f, 0.25f}),
@@ -1473,7 +1557,8 @@ int main()
             const glm::vec2 windowCenter(-1.80f, -4.85f);
             const glm::vec2 playerXZ(camera.position.x, camera.position.z);
             const float distToWindow = glm::length(playerXZ - windowCenter);
-            const float distanceFade = glm::smoothstep(0.75f, 2.60f, distToWindow);
+            // Os olhos somem antes de o jogador entrar no alcance de interacao da janela.
+            const float distanceFade = glm::smoothstep(REACH + 0.15f, REACH + 1.65f, distToWindow);
             const float scaredFade = glfwGetTime() < eyesHiddenUntil ? 0.0f : 1.0f;
             const float overallVisibility = distanceFade * scaredFade;
 
@@ -1549,6 +1634,38 @@ int main()
         drawObj(shader, cube, makeModel({5, 1.5f, 3.5f}, {0.2f, 3, 3}), Mat::wallHalloween(), texWall, {1, 1}, nrmWall);
         drawObj(shader, cube, makeModel({5, 2.6f, 1.5f}, {0.2f, 0.8f, 1}), Mat::wallHalloween(), texWall, glm::vec2(1.0f), nrmWall);
 
+        // Pentagrama pintado na face interna da parede, ao lado da porta.
+        {
+            const float wallX = 4.875f; // frente da parede em x = 4.9; sem sobreposicao
+            const float cy = 1.62f, cz = -0.35f, radius = 0.57f;
+            Material redPaint{
+                {0.16f, 0.010f, 0.013f},
+                {0.38f, 0.021f, 0.028f},
+                {0.0f, 0.0f, 0.0f},
+                3.0f,
+                {0.020f, 0.001f, 0.002f}};
+
+            const int sides = 56;
+            for (int i = 0; i < sides; ++i)
+            {
+                float a = 2.0f * PI_F * i / sides;
+                float b = 2.0f * PI_F * (i + 1) / sides;
+                line({wallX, cy + radius * std::cos(a), cz + radius * std::sin(a)},
+                     {wallX, cy + radius * std::cos(b), cz + radius * std::sin(b)},
+                     0.010f, redPaint);
+            }
+
+            glm::vec3 star[5];
+            for (int i = 0; i < 5; ++i)
+            {
+                const float a = 2.0f * PI_F * i / 5;
+                star[i] = {wallX, cy + radius * 0.88f * std::cos(a),
+                           cz + radius * 0.88f * std::sin(a)};
+            }
+            for (int i = 0; i < 5; ++i)
+                line(star[i], star[(i + 2) % 5], 0.014f, redPaint);
+        }
+
         glm::mat4 doorBase(1.0f);
         doorBase = glm::translate(doorBase, glm::vec3(5.0f, 0.0f, 1.0f));
         doorBase = glm::rotate(doorBase, glm::radians(doorAngle), glm::vec3(0, 1, 0));
@@ -1565,10 +1682,23 @@ int main()
             for (float z : lz)
                 drawObj(shader, cube, makeModel({x, 0.35f, z}, {0.1f, 0.7f, 0.1f}), Mat::wood(), texWood);
 
-        drawObj(shader, cylinder, makeModel({0, 0.825f, 0}, {0.25f, 0.05f, 0.25f}), Mat::metal(), white);
-        drawObj(shader, cylinder, makeModel({0, 1.05f, 0}, {0.04f, 0.4f, 0.04f}), Mat::metal(), white);
-        glm::vec3 glow = lampOn ? glm::vec3(1.0f, 0.6f, 0.2f) : glm::vec3(0.0f);
-        drawObj(shader, sphere, makeModel({0, 1.3f, 0}, {0.2f, 0.2f, 0.2f}), Mat::glowing(glow), white);
+        // Bola de cristal ambar: assume a iluminacao e a interacao do antigo abajur.
+        Material amberCrystal{
+            {0.12f, 0.065f, 0.015f},
+            {0.50f, 0.25f, 0.055f},
+            {0.75f, 0.50f, 0.18f},
+            96.0f,
+            crystalOn ? glm::vec3(0.95f, 0.43f, 0.09f) : glm::vec3(0.0f)};
+        Material crystalStand{
+            {0.06f, 0.032f, 0.015f},
+            {0.30f, 0.16f, 0.06f},
+            {0.35f, 0.24f, 0.12f},
+            40.0f,
+            {0.0f, 0.0f, 0.0f}};
+        drawObj(shader, cylinder, makeModel({0, 0.83f, 0}, {0.27f, 0.05f, 0.27f}), crystalStand, white);
+        drawObj(shader, cylinder, makeModel({0, 0.90f, 0}, {0.12f, 0.12f, 0.12f}), crystalStand, white);
+        drawObj(shader, cylinder, makeModel({0, 0.97f, 0}, {0.19f, 0.04f, 0.19f}), crystalStand, white);
+        drawObj(shader, sphere, makeModel({0, 1.125f, 0}, {0.33f, 0.33f, 0.33f}), amberCrystal, white);
 
         {
 
@@ -1724,10 +1854,71 @@ int main()
         }
 
         drawObj(shader, cube, makeModel({2.5f, 0.3f, -4.6f}, {1.6f, 0.6f, 0.5f}), Mat::wood(), texWood);
-        drawObj(shader, cube, makeModel({2.5f, 1.2f, -4.85f}, {1.4f, 0.8f, 0.08f}), tvFrame, white);
-        glm::vec3 screen = glm::vec3(0.2f, 0.5f, 0.95f) * flicker;
-        drawObj(shader, cube, makeModel({2.5f, 1.2f, -4.80f}, {1.3f, 0.7f, 0.02f}),
+
+        const glm::vec3 tvCenter = {2.5f, 1.2f, -4.86f};
+        // Corpo unico; a borda preta aparece ao redor da tela sem superficies coplanares.
+        drawObj(shader, cube, makeModel(tvCenter, {1.42f, 0.82f, 0.10f}), tvFrame, white);
+
+        glm::vec3 screen = glm::vec3(0.20f, 0.50f, 0.95f) * flicker;
+        // A parede frontal do corpo termina em z=-4.81; a tela comeca em z=-4.797.
+        const glm::vec3 screenCenter = tvCenter + glm::vec3(0.0f, 0.0f, 0.066f);
+        drawObj(shader, cube, makeModel(screenCenter, {1.22f, 0.62f, 0.006f}),
                 tvOn ? Mat::glowing(screen) : tvOff, white);
+
+        // Apoio conectado ao movel, sem folgas entre suporte e base.
+        drawObj(shader, cube, makeModel(tvCenter + glm::vec3(0.0f, -0.495f, 0.00f), {0.10f, 0.17f, 0.08f}), tvFrame, white);
+        drawObj(shader, cube, makeModel(tvCenter + glm::vec3(0.0f, -0.59f, 0.02f), {0.55f, 0.02f, 0.22f}), tvFrame, white);
+
+        if (tvOn)
+        {
+            Material tvText{{0.00f, 0.00f, 0.00f}, {0.03f, 0.03f, 0.03f}, {0.00f, 0.00f, 0.00f}, 1.0f};
+            // Letras pretas ficam a frente da tela, nunca na mesma profundidade.
+            const float zText = screenCenter.z + 0.020f;
+            auto seg = [&](float x, float y, float sx, float sy)
+            {
+                drawObj(shader, cube,
+                        makeModel({x, y, zText}, {sx, sy, 0.0035f}),
+                        tvText, white);
+            };
+            auto drawO = [&](float cx, float cy, float w, float h)
+            {
+                const float t = 0.018f;
+                seg(cx, cy + h * 0.5f, w, t);
+                seg(cx, cy - h * 0.5f, w, t);
+                seg(cx - w * 0.5f, cy, t, h);
+                seg(cx + w * 0.5f, cy, t, h);
+            };
+            auto drawB = [&](float cx, float cy, float w, float h)
+            {
+                const float t = 0.018f;
+                seg(cx - w * 0.5f, cy, t, h);
+                seg(cx, cy + h * 0.5f, w, t);
+                seg(cx, cy, w * 0.88f, t);
+                seg(cx, cy - h * 0.5f, w, t);
+                seg(cx + w * 0.5f, cy + h * 0.24f, t, h * 0.28f);
+                seg(cx + w * 0.5f, cy - h * 0.24f, t, h * 0.28f);
+            };
+            auto drawBang = [&](float cx, float cy)
+            {
+                seg(cx, cy + 0.030f, 0.018f, 0.090f);
+                seg(cx, cy - 0.055f, 0.018f, 0.018f);
+            };
+
+            const float y = 1.20f;
+            const float w = 0.085f;
+            const float h = 0.14f;
+            drawB(2.13f, y, w, h);
+            drawO(2.25f, y, 0.070f, 0.105f);
+            drawO(2.35f, y, 0.070f, 0.105f);
+            drawO(2.45f, y, 0.070f, 0.105f);
+            drawO(2.55f, y, 0.070f, 0.105f);
+            drawO(2.65f, y, 0.070f, 0.105f);
+            drawO(2.75f, y, 0.070f, 0.105f);
+            drawBang(2.88f, y);
+            drawBang(2.94f, y);
+            drawBang(3.00f, y);
+            drawBang(3.06f, y);
+        }
 
         glm::vec3 fanPos(-2.5f, 2.75f, -2.5f);
         drawObj(shader, cylinder, makeModel({-2.5f, 2.9f, -2.5f}, {0.04f, 0.2f, 0.04f}), Mat::metal(), white);
@@ -1777,16 +1968,23 @@ int main()
             glm::vec3 cp(3.3f, 0.0f, -2.0f);
             drawObj(shader, sphere, makeModel(cp + glm::vec3(0, 0.30f, 0), {0.85f, 0.60f, 0.85f}), Mat::black(), white);
             drawObj(shader, cylinder, makeModel(cp + glm::vec3(0, 0.55f, 0), {0.78f, 0.20f, 0.78f}), Mat::black(), white);
-            drawObj(shader, cylinder, makeModel(cp + glm::vec3(0, 0.66f, 0), {0.62f, 0.02f, 0.62f}),
-                    Mat::glowing((potionDone ? glm::vec3(0.7f, 0.25f, 1.0f) : glm::vec3(0.2f, 0.9f, 0.15f)) * (0.8f + 0.2f * std::sin(now * 3.0f))), white);
+            const bool ritualLit = candlesLit() == 3;
+            Material coldBrew{{0.005f, 0.012f, 0.006f}, {0.025f, 0.065f, 0.030f}, {0.05f, 0.07f, 0.05f}, 12.0f, {0.0f, 0.0f, 0.0f}};
+            Material brew = ritualLit
+                                ? Mat::glowing((potionDone ? glm::vec3(0.7f, 0.25f, 1.0f) : glm::vec3(0.2f, 0.9f, 0.15f)) * (0.8f + 0.2f * std::sin(now * 3.0f)))
+                                : coldBrew;
+            drawObj(shader, cylinder, makeModel(cp + glm::vec3(0, 0.66f, 0), {0.62f, 0.02f, 0.62f}), brew, white);
 
-            for (int i = 0; i < 4; i++)
+            if (ritualLit)
             {
-                float t = std::fmod(now * 0.45f + i * 0.25f, 1.0f);
-                float a = i * 1.9f;
-                glm::vec3 bp = cp + glm::vec3(0.12f * std::cos(a), 0.68f + t * 0.45f, 0.12f * std::sin(a));
-                float sz = 0.07f * (1.0f - t * 0.6f);
-                drawObj(shader, sphere, makeModel(bp, glm::vec3(sz)), Mat::glowing(potionDone ? glm::vec3(0.8f, 0.4f, 1.0f) : glm::vec3(0.3f, 1.0f, 0.2f)), white);
+                for (int i = 0; i < 4; i++)
+                {
+                    float t = std::fmod(now * 0.45f + i * 0.25f, 1.0f);
+                    float a = i * 1.9f;
+                    glm::vec3 bp = cp + glm::vec3(0.12f * std::cos(a), 0.68f + t * 0.45f, 0.12f * std::sin(a));
+                    float sz = 0.07f * (1.0f - t * 0.6f);
+                    drawObj(shader, sphere, makeModel(bp, glm::vec3(sz)), Mat::glowing(potionDone ? glm::vec3(0.8f, 0.4f, 1.0f) : glm::vec3(0.3f, 1.0f, 0.2f)), white);
+                }
             }
 
             for (int i = 0; i < 3; i++)
@@ -1847,6 +2045,27 @@ int main()
             }
         }
 
+        // Tabuleiro Ouija no chao, proximo ao fantasma da Lara.
+        {
+            Material ouijaWood{{0.20f, 0.14f, 0.09f}, {0.68f, 0.54f, 0.39f}, {0.035f, 0.026f, 0.020f}, 10.0f};
+            Material ouijaPrint{{0.34f, 0.31f, 0.27f}, {1.0f, 1.0f, 1.0f}, {0.020f, 0.020f, 0.020f}, 4.0f};
+            Material planchetteWood{{0.30f, 0.26f, 0.20f}, {0.95f, 0.93f, 0.87f}, {0.035f, 0.030f, 0.025f}, 10.0f};
+
+            // Frente do tabuleiro voltada para o centro da sala (oposta a Lara).
+            const float ouijaRotation = 180.0f;
+            drawObj(shader, cube, makeModel(OUIJA_POS, {1.34f, 0.065f, 0.85f}, ouijaRotation),
+                    ouijaWood, texWood);
+            drawObj(shader, ouijaTop,
+                    makeModel(OUIJA_POS + glm::vec3(0.0f, 0.038f, 0.0f),
+                              {1.315f, 1.0f, 0.825f}, ouijaRotation),
+                    ouijaPrint, texOuijaBoard);
+            glm::mat4 piece = glm::translate(glm::mat4(1.0f),
+                                             OUIJA_POS + glm::vec3(0.0f, 0.042f, 0.0f));
+            piece = glm::rotate(piece, glm::radians(ouijaRotation), glm::vec3(0, 1, 0));
+            piece = glm::translate(piece, glm::vec3(ouijaSlide, 0.0f, 0.0f));
+            drawObj(shader, ouijaPlanchette, piece, planchetteWood, texOuijaPlanchette);
+        }
+
         for (int gi = 0; gi < 3; ++gi)
         {
             glm::vec3 gp = GHOST_POS[gi] +
@@ -1903,15 +2122,23 @@ int main()
         {
             if (candyGot[i])
                 continue;
+
+            // Os doces so ganham uma leve emissao quando o jogador se aproxima.
+            float distXZ = glm::distance(glm::vec2(camera.position.x, camera.position.z),
+                                         glm::vec2(CANDY_POS[i].x, CANDY_POS[i].z));
+            float glow = glm::clamp((2.8f - distXZ) / 1.5f, 0.0f, 1.0f);
+            glow = glow * glow * (3.0f - 2.0f * glow);
+
             glm::vec3 cp = CANDY_POS[i] + glm::vec3(0, 0.05f * std::sin(now * 2.0f + i), 0);
             glm::mat4 cb = glm::rotate(glm::translate(glm::mat4(1.0f), cp), now * 1.5f + i, glm::vec3(0, 1, 0));
-            Material body = Mat::glowing(glm::vec3(1.0f, 0.45f, 0.05f) * 0.8f);
+            Material body{{0.18f, 0.07f, 0.01f}, {1.0f, 0.45f, 0.05f}, {0.09f, 0.07f, 0.04f}, 16.0f, glm::vec3(1.0f, 0.45f, 0.05f) * (0.22f * glow)};
+            Material wrapper{{0.10f, 0.03f, 0.16f}, {0.6f, 0.2f, 0.9f}, {0.06f, 0.04f, 0.10f}, 16.0f, glm::vec3(0.6f, 0.2f, 0.9f) * (0.20f * glow)};
             drawObj(shader, sphere, glm::scale(cb, {0.16f, 0.09f, 0.09f}), body, white);
             for (int sx = -1; sx <= 1; sx += 2)
             {
                 glm::mat4 w = glm::translate(cb, {sx * 0.11f, 0, 0});
                 w = glm::rotate(w, glm::radians(45.0f), glm::vec3(1, 0, 0));
-                drawObj(shader, cube, glm::scale(w, {0.05f, 0.07f, 0.07f}), Mat::glowing(glm::vec3(0.6f, 0.2f, 0.9f) * 0.8f), white);
+                drawObj(shader, cube, glm::scale(w, {0.05f, 0.07f, 0.07f}), wrapper, white);
             }
         }
 
@@ -1988,7 +2215,7 @@ int main()
             moonBeamShader.setMat4("model", glm::mat4(1.0f));
             moonBeamShader.setVec2("uvScale", glm::vec2(1.0f));
             moonBeamShader.setFloat("time", now);
-            moonBeamShader.setFloat("beamStrength", 0.08f);
+            moonBeamShader.setFloat("beamStrength", 0.015f);
             moonBeams.draw();
 
             glDepthMask(depthWriteWasEnabled);
@@ -1996,49 +2223,6 @@ int main()
                 glEnable(GL_CULL_FACE);
             if (!blendWasEnabled)
                 glDisable(GL_BLEND);
-            shader.use();
-        }
-
-        {
-            const glm::vec3 crystalCenter(0.83f, 1.285f + 0.170f, 4.60f);
-            glm::vec3 toCamera = camera.position - crystalCenter;
-            if (glm::length(toCamera) > 0.001f)
-                toCamera = glm::normalize(toCamera);
-            else
-                toCamera = glm::vec3(0.0f, 0.0f, -1.0f);
-
-            glm::mat4 glowModel = glm::inverse(camera.getViewMatrix());
-            glowModel[3] = glm::vec4(crystalCenter - toCamera * 0.075f, 1.0f);
-            glowModel = glm::rotate(glowModel, glm::radians(90.0f),
-                                    glm::vec3(1.0f, 0.0f, 0.0f));
-            glowModel = glm::scale(glowModel, glm::vec3(0.70f, 1.0f, 0.70f));
-
-            const GLboolean blendBefore = glIsEnabled(GL_BLEND);
-            const GLboolean cullBefore = glIsEnabled(GL_CULL_FACE);
-            GLboolean depthWriteBefore = GL_TRUE;
-            glGetBooleanv(GL_DEPTH_WRITEMASK, &depthWriteBefore);
-
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-            glDepthMask(GL_FALSE);
-            glDisable(GL_CULL_FACE);
-
-            crystalGlowShader.use();
-            crystalGlowShader.setMat4("projection", glm::perspective(
-                                                        glm::radians(60.0f), (float)w / (float)(h > 0 ? h : 1),
-                                                        0.1f, 100.0f));
-            crystalGlowShader.setMat4("view", camera.getViewMatrix());
-            crystalGlowShader.setMat4("model", glowModel);
-            crystalGlowShader.setFloat("glowStrength",
-                                       0.68f * crystalLightPulse);
-            plane.draw();
-
-            glDepthMask(depthWriteBefore);
-            if (cullBefore)
-                glEnable(GL_CULL_FACE);
-            if (!blendBefore)
-                glDisable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
             shader.use();
         }
 
