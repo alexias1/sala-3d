@@ -92,13 +92,25 @@ void say(const std::string &m, double secs = 3.5)
 // Posicoes usadas tanto na renderizacao quanto nas interacoes.
 const glm::vec2 CANDLE_XZ[3] = {{-0.7f, -0.28f}, {0.65f, 0.3f}, {0.2f, -0.3f}};
 
-const glm::vec3 CANDY_POS[3] = {{-3.9f, 0.15f, -3.2f}, {0.58f, 0.78f, 4.52f}, {-1.2f, 0.15f, -3.8f}};
+const glm::vec3 CANDY_POS[3] = {
+    {2.50f, 0.68f, -4.65f}, // em cima da estante da TV
+    {0.56f, 0.75f, 4.62f},  // na estante/caixao
+    {-4.00f, 0.15f, 2.00f}  // no chao, entre a abobora grande e a lapide
+};
 const glm::vec3 CAULDRON(3.3f, 0.0f, -2.0f);
 const glm::vec3 KEY_POS = CAULDRON + glm::vec3(0.0f, 1.35f, 0.0f);
-const glm::vec3 OUIJA_POS(3.10f, 0.054f, 3.45f);
+const glm::vec3 OUIJA_POS(2.50f, 0.054f, 4.00f);
 
 const char *STUDENT_NAMES[3] = {
     "Alexia Rodrigues", "Barbara Albuquerque", "Lara Nogueira"};
+
+// Epitafios individuais, alinhados aos indices de STUDENT_NAMES e TOMB_POS.
+// O HUD usa fonte ASCII, portanto mantemos as frases sem acentos.
+const char *TOMB_EPITAPHS[3] = {
+    "Nem a morte conseguiu silenciar seus gritos.",    // Alexia
+    "Seu corpo encontrou descanso. Sua alma, jamais.", // Barbara
+    "A eternidade tornou-se sua prisao."               // Lara
+};
 const glm::vec3 TOMB_POS[3] = {
     {-4.55f, 0.45f, -0.60f},
     {-4.45f, 0.40f, 0.50f},
@@ -112,6 +124,16 @@ const glm::vec3 GHOST_COLORS[3] = {
     {0.42f, 0.48f, 0.62f},
     {0.51f, 0.39f, 0.65f},
     {0.39f, 0.62f, 0.61f}};
+
+const char *GHOST_TRAPPED_LINES[3] = {
+    "ME LIBERTE OU NAO DEIXAREI VOCE IR!",
+    "MINHA PRISAO E SUA PRISAO!",
+    "ENQUANTO MEU ESPIRITO ESTIVER PRESO, VOCE TAMBEM ESTARA!"};
+
+const char *GHOST_FREED_LINES[3] = {
+    "Alexia: Agora posso descansar... obrigada.",
+    "Barbara: As correntes se romperam. Estou livre!",
+    "Lara: A escuridao ja nao me prende. Adeus..."};
 
 const glm::vec3 BIG_PUMPKIN(-3.2f, 0.0f, 2.2f);
 
@@ -136,6 +158,10 @@ enum ItemId
     I_FAN,
     I_CRYSTAL,
     I_PUMPKIN,
+    I_PUMPKIN1,
+    I_PUMPKIN2,
+    I_PUMPKIN3,
+    I_PUMPKIN4,
     I_CANDLE0,
     I_CANDLE1,
     I_CANDLE2,
@@ -166,7 +192,11 @@ Interactable items[I_COUNT] = {
     {"TV", {2.5f, 1.2f, -4.8f}},
     {"ventilador", {-2.5f, 2.8f, -2.5f}},
     {"bola de cristal", {0.0f, 1.12f, 0.0f}},
-    {"abobora", {-3.2f, 0.4f, 2.2f}},
+    {"abobora", {BIG_PUMPKIN.x, BIG_PUMPKIN.y + 0.40f, BIG_PUMPKIN.z}},
+    {"abobora", {SMALL_PUMPKINS[0].pos.x, SMALL_PUMPKINS[0].pos.y + 0.25f * SMALL_PUMPKINS[0].scale, SMALL_PUMPKINS[0].pos.z}},
+    {"abobora", {SMALL_PUMPKINS[1].pos.x, SMALL_PUMPKINS[1].pos.y + 0.25f * SMALL_PUMPKINS[1].scale, SMALL_PUMPKINS[1].pos.z}},
+    {"abobora", {SMALL_PUMPKINS[2].pos.x, SMALL_PUMPKINS[2].pos.y + 0.25f * SMALL_PUMPKINS[2].scale, SMALL_PUMPKINS[2].pos.z}},
+    {"abobora", {SMALL_PUMPKINS[3].pos.x, SMALL_PUMPKINS[3].pos.y + 0.25f * SMALL_PUMPKINS[3].scale, SMALL_PUMPKINS[3].pos.z}},
     {"vela", {CANDLE_XZ[0].x, 0.95f, CANDLE_XZ[0].y}},
     {"vela", {CANDLE_XZ[1].x, 0.95f, CANDLE_XZ[1].y}},
     {"vela", {CANDLE_XZ[2].x, 0.95f, CANDLE_XZ[2].y}},
@@ -265,6 +295,10 @@ std::string promptFor(int id)
     case I_CRYSTAL:
         return crystalOn ? "[E] desligar bola de cristal magica" : "[E] ligar bola de cristal magica";
     case I_PUMPKIN:
+    case I_PUMPKIN1:
+    case I_PUMPKIN2:
+    case I_PUMPKIN3:
+    case I_PUMPKIN4:
         return pumpkinOn ? "[E] apagar as aboboras" : "[E] acender as aboboras";
     case I_CANDLE0:
     case I_CANDLE1:
@@ -343,6 +377,10 @@ void interact(int id)
         crystalOn = !crystalOn;
         break;
     case I_PUMPKIN:
+    case I_PUMPKIN1:
+    case I_PUMPKIN2:
+    case I_PUMPKIN3:
+    case I_PUMPKIN4:
         pumpkinOn = !pumpkinOn;
         break;
     case I_CANDLE0:
@@ -385,22 +423,14 @@ void interact(int id)
     case I_TOMB2:
     {
         int i = id - I_TOMB0;
+        const bool firstReading = !tombInspected[i];
+        if (firstReading)
+            tombInspected[i] = true;
 
-        if (tombInspected[i])
-        {
-            if (tombCount() == 3)
-                say("Aqui jazem tres alunas... procure seus espiritos!", 5.0);
-            else
-                say(std::string("Aqui jaz ") + STUDENT_NAMES[i] + ".", 4.0);
-            break;
-        }
-
-        tombInspected[i] = true;
-
-        say(std::string("Aqui jaz ") + STUDENT_NAMES[i] + ". (" +
-                std::to_string(tombCount()) + "/3)",
-            4.5);
-
+        std::string inscription = std::string(STUDENT_NAMES[i]) + ": " + TOMB_EPITAPHS[i];
+        if (firstReading)
+            inscription += " (" + std::to_string(tombCount()) + "/3)";
+        say(inscription, 6.0);
         break;
     }
     case I_GHOST0:
@@ -410,21 +440,19 @@ void interact(int id)
         int i = id - I_GHOST0;
         if (tombCount() < 3)
         {
-            say("LEIA NOSSAS LAPIDES E LIBERTE NOSSOS ESPIRITOS!", 4.5);
+            say(GHOST_TRAPPED_LINES[i], 5.0);
             break;
         }
         if (ghostFound[i])
         {
-            say(std::string("Espirito libertado: ") + STUDENT_NAMES[i] + ".", 4.0);
+            say(GHOST_FREED_LINES[i], 5.0);
             break;
         }
         ghostFound[i] = true;
+        std::string message = GHOST_FREED_LINES[i];
         if (ghostCount() == 3)
-            say("Os tres espiritos foram libertados! A maldicao enfraqueceu.", 5.0);
-        else
-            say(std::string("Espirito encontrado: ") + STUDENT_NAMES[i] + " (" +
-                    std::to_string(ghostCount()) + "/3)",
-                4.5);
+            message += " A maldicao foi quebrada!";
+        say(message, 6.0);
         break;
     }
     case I_CARDS:
@@ -461,7 +489,7 @@ void interact(int id)
         ouijaSlideFrom = ouijaSlide;
         ouijaSlideTo = ouijaRight ? 0.23f : -0.23f;
         ouijaMoveAt = glfwGetTime();
-        say("03/11... hoje eu faria aniversario...", 5.0);
+        say("03/11... hoje seria meu aniversario...", 5.0);
         break;
     }
 }
@@ -1390,7 +1418,7 @@ int main()
 
             drawPotion({1.00f, s0, z}, 3, 0.7f, {0.65f, 0.49f, 0.15f}, 1);
 
-            drawSkull({0.32f, s1, z}, 0.80f, 12.0f,
+            drawSkull({0.25f, s1, z}, 0.80f, 12.0f,
                       {0.18f, 0.19f, 0.21f}, false);
 
             bookRow(0.74f, s1, {
@@ -2052,7 +2080,7 @@ int main()
             Material planchetteWood{{0.30f, 0.26f, 0.20f}, {0.95f, 0.93f, 0.87f}, {0.035f, 0.030f, 0.025f}, 10.0f};
 
             // Frente do tabuleiro voltada para o centro da sala (oposta a Lara).
-            const float ouijaRotation = 180.0f;
+            const float ouijaRotation = -25.0f;
             drawObj(shader, cube, makeModel(OUIJA_POS, {1.34f, 0.065f, 0.85f}, ouijaRotation),
                     ouijaWood, texWood);
             drawObj(shader, ouijaTop,
@@ -2100,7 +2128,13 @@ int main()
             // Olhos vermelhos enquanto preso; pretos apos libertar o espirito.
             Material ghostEyes = ghostFound[gi]
                                      ? Mat::black()
-                                     : Mat::glowing(glm::vec3(0.95f, 0.025f, 0.015f));
+                                     : Material{
+                                           {0.35f, 0.00f, 0.00f}, // ambiente
+                                           {1.00f, 0.05f, 0.05f}, // difusa
+                                           {0.40f, 0.05f, 0.05f}, // especular
+                                           40.0f,                 // brilho
+                                           {1.60f, 0.08f, 0.08f}  // emissive
+                                       };
             for (int sx = -1; sx <= 1; sx += 2)
             {
                 drawObj(shader, sphere,
