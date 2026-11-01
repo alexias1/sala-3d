@@ -1,0 +1,83 @@
+#version 330 core
+
+// Neblina baixa e animada, com contorno irregular, sem textura.
+in vec3 FragPos;
+in vec3 Normal;
+in vec2 UV;
+
+out vec4 FragColor;
+
+uniform float time;
+uniform float opacity;
+uniform float layerIndex;
+
+float hash21(vec2 p)
+{
+    p = fract(p * vec2(123.34, 345.45));
+    p += dot(p, p + 34.345);
+    return fract(p.x * p.y);
+}
+
+// Ruido suave interpolado.
+float noise2d(vec2 p)
+{
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+
+    float a = hash21(i);
+    float b = hash21(i + vec2(1.0, 0.0));
+    float c = hash21(i + vec2(0.0, 1.0));
+    float d = hash21(i + vec2(1.0, 1.0));
+
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+// Nuvens com detalhes em varias escalas (fractal Brownian motion).
+float fbm(vec2 p)
+{
+    float value = 0.0;
+    float amplitude = 0.5;
+    for (int i = 0; i < 4; ++i)
+    {
+        value += amplitude * noise2d(p);
+        p = p * 2.03 + 17.3;
+        amplitude *= 0.5;
+    }
+    return value;
+}
+
+void main()
+{
+    vec2 pos = FragPos.xz;
+    float t = time;
+
+    // Fluxos lentos e diferentes em cada camada.
+    vec2 drift = vec2(t * 0.055, -t * 0.025);
+    vec2 offset = vec2(layerIndex * 18.7, layerIndex * 9.4);
+    float broad = fbm(pos * 0.13 + drift + offset);
+    float detail = fbm(pos * 0.31 - drift * 0.75 + offset * 1.6);
+
+    // Manchas macias de densidade irregular: nada de quadrado uniforme.
+    float swirls = smoothstep(0.34, 0.66, broad * 0.72 + detail * 0.28);
+    float density = 0.22 + 0.78 * swirls;
+
+    // A faixa vai ficando invisivel perto da parede da sala (z = -5).
+    // Portanto, a neblina NUNCA entra pela janela.
+    float outside = -5.0 - FragPos.z;
+    float fadeNear = smoothstep(0.2, 6.5, outside);
+
+    // Some gradualmente muito antes de encontrar o anel das montanhas.
+    float fadeFar = 1.0 - smoothstep(23.0, 37.0, outside);
+
+    // Dissolve nas bordas laterais do plano: nao forma um retangulo.
+    float fadeLeft = smoothstep(0.0, 0.16, UV.x);
+    float fadeRight = 1.0 - smoothstep(0.84, 1.0, UV.x);
+    float alpha = opacity * density * fadeNear * fadeFar * fadeLeft * fadeRight;
+
+    // Azul acinzentado, pouco luminoso: neblina fria de Halloween.
+    vec3 fogColor = mix(vec3(0.29, 0.34, 0.42),
+                        vec3(0.44, 0.48, 0.57), swirls * 0.55);
+
+    FragColor = vec4(fogColor, alpha);
+}
