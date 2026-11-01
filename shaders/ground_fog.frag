@@ -62,18 +62,17 @@ void main()
     float swirls = smoothstep(0.34, 0.66, broad * 0.72 + detail * 0.28);
     float density = 0.22 + 0.78 * swirls;
 
-    // A faixa vai ficando invisivel perto da parede da sala (z = -5).
-    // Portanto, a neblina NUNCA entra pela janela.
-    float outside = -5.0 - FragPos.z;
-    float fadeNear = smoothstep(0.2, 6.5, outside);
+    // Distancia horizontal ate a parte externa das quatro paredes da casa.
+    // Dentro da sala o valor e zero: nenhuma camada de neblina a invade.
+    vec2 pastWalls = max(abs(pos) - vec2(5.05), vec2(0.0));
+    float outsideDistance = length(pastWalls);
+    float fadeNear = smoothstep(0.10, 2.6, outsideDistance);
 
-    // Some gradualmente muito antes de encontrar o anel das montanhas.
-    float fadeFar = 1.0 - smoothstep(23.0, 37.0, outside);
+    // Desaparece radialmente antes das montanhas, sem bordas quadradas.
+    float distanceFromHouse = length(pos);
+    float fadeFar = 1.0 - smoothstep(19.0, 25.0, distanceFromHouse);
 
-    // Dissolve nas bordas laterais do plano: nao forma um retangulo.
-    float fadeLeft = smoothstep(0.0, 0.16, UV.x);
-    float fadeRight = 1.0 - smoothstep(0.84, 1.0, UV.x);
-    float alpha = opacity * density * fadeNear * fadeFar * fadeLeft * fadeRight;
+    float alpha = opacity * density * fadeNear * fadeFar;
 
     // Azul acinzentado, pouco luminoso: neblina fria de Halloween.
     vec3 fogColor = mix(vec3(0.29, 0.34, 0.42),

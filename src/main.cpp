@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <vector>
 #include <random>
+#include <fstream>
 #include "Shader.h"
 #include "Camera.h"
 #include "Mesh.h"
@@ -675,35 +676,61 @@ int main()
     }
     Mesh ouijaPlanchette(planchetteVerts, planchetteIdx);
 
-    // Relevo circular distante: evita bordas visiveis pela janela.
-    constexpr int MOUNTAIN_SEGMENTS = 192;
+    // Montanhas 360 graus com encostas de verdade: em vez de paredes verticais,
+    // uma malha radial sobe gradualmente do gramado e volta ao solo ao longe.
+    // A borda das montanhas fica ligeiramente abaixo do terreno para evitar frestas.
+    constexpr int MOUNTAIN_SEGMENTS = 384;
+    constexpr int MOUNTAIN_RINGS = 20;
+    constexpr float MOUNTAIN_INNER_RADIUS = 22.0f;
+    constexpr float MOUNTAIN_OUTER_RADIUS = 52.0f;
     std::vector<Vertex> mountainVerts;
     std::vector<unsigned int> mountainIdx;
-    mountainVerts.reserve((MOUNTAIN_SEGMENTS + 1) * 2);
-    mountainIdx.reserve(MOUNTAIN_SEGMENTS * 6);
+    mountainVerts.reserve((MOUNTAIN_SEGMENTS + 1) * (MOUNTAIN_RINGS + 1));
+    mountainIdx.reserve(MOUNTAIN_SEGMENTS * MOUNTAIN_RINGS * 6);
 
-    for (int i = 0; i <= MOUNTAIN_SEGMENTS; ++i)
+    auto mountainPoint = [&](float t, float a) -> glm::vec3
     {
-        const float a = 2.0f * PI_F * (float)i / (float)MOUNTAIN_SEGMENTS;
+        const float radius = MOUNTAIN_INNER_RADIUS +
+                             (MOUNTAIN_OUTER_RADIUS - MOUNTAIN_INNER_RADIUS) * t;
+        // Ondas suaves e periodicas: a primeira e a ultima secao se encaixam.
+        const float wave1 = 0.5f + 0.5f * std::sin(5.0f * a + 0.4f);
+        const float wave2 = 0.5f + 0.5f * std::sin(11.0f * a + 1.3f);
+        const float ridgeHeight = 3.6f + 2.0f * wave1 + 0.9f * wave2;
+        const float profile = std::pow(std::max(0.0f, std::sin(PI_F * t)), 1.25f);
+        const float height = -0.085f + profile * ridgeHeight;
+        return {radius * std::cos(a), height, radius * std::sin(a)};
+    };
 
-        const float radius = 43.0f + 1.6f * std::sin(5.0f * a + 0.7f) + 0.9f * std::cos(13.0f * a + 0.2f);
-
-        const float height = 2.0f + 2.1f * std::pow(std::fabs(std::sin(7.0f * a + 0.4f)), 4.0f) + 1.1f * std::pow(std::fabs(std::sin(17.0f * a + 1.2f)), 5.0f) + 0.35f * std::sin(4.0f * a + 0.3f);
-
-        const float x = radius * std::cos(a);
-        const float z = radius * std::sin(a);
-        const glm::vec3 normal(-std::cos(a), 0.0f, -std::sin(a));
-
-        mountainVerts.push_back({{x, -5.0f, z}, normal, {0.0f, 0.0f}});
-        mountainVerts.push_back({{x, height, z}, normal, {0.0f, 1.0f}});
-
-        if (i > 0)
+    for (int ring = 0; ring <= MOUNTAIN_RINGS; ++ring)
+    {
+        const float t = (float)ring / (float)MOUNTAIN_RINGS;
+        for (int i = 0; i <= MOUNTAIN_SEGMENTS; ++i)
         {
-            const unsigned int prev = (unsigned int)(i - 1) * 2;
-            const unsigned int curr = (unsigned int)i * 2;
+            const float a = 2.0f * PI_F * (float)i / (float)MOUNTAIN_SEGMENTS;
+            const glm::vec3 p = mountainPoint(t, a);
+            // Normais calculadas a partir da superficie inclinada, sem faces duras.
+            const glm::vec3 along = mountainPoint(t, a + 0.001f) -
+                                    mountainPoint(t, a - 0.001f);
+            const glm::vec3 outward = mountainPoint(std::min(1.0f, t + 0.001f), a) -
+                                      mountainPoint(std::max(0.0f, t - 0.001f), a);
+            const glm::vec3 normal = glm::normalize(glm::cross(along, outward));
+            // UV planar em coordenadas de mundo: escala uniforme na encosta,
+            // sem distorcao ou emenda no fechamento do anel de montanhas.
+            // Aproximadamente uma repeticao da textura a cada 6 unidades.
+            const glm::vec2 mountainUV(p.x / 6.0f, p.z / 6.0f);
+            mountainVerts.push_back({p, normal, mountainUV});
+        }
+    }
 
-            mountainIdx.insert(mountainIdx.end(), {prev, curr, curr + 1,
-                                                   prev, curr + 1, prev + 1});
+    const unsigned int stride = MOUNTAIN_SEGMENTS + 1;
+    for (int ring = 0; ring < MOUNTAIN_RINGS; ++ring)
+    {
+        for (int i = 0; i < MOUNTAIN_SEGMENTS; ++i)
+        {
+            const unsigned int near = (unsigned int)ring * stride + (unsigned int)i;
+            const unsigned int far = near + stride;
+            mountainIdx.insert(mountainIdx.end(), {near, near + 1, far,
+                                                   near + 1, far + 1, far});
         }
     }
 
@@ -771,6 +798,21 @@ int main()
     unsigned int nrmFloor = loadNormalMap("assets/textures/floor_normal.jpg");
     unsigned int nrmWall = loadNormalMap("assets/textures/wall_normal.jpg");
     unsigned int texMoon = loadTexture("assets/textures/textura_lua.jpg");
+    unsigned int texMountain = loadTexture("assets/textures/textura_montanha.jpeg");
+
+    // Textura do gramado: aceita .jpg, .jpeg ou .png, sem precisar alterar o codigo.
+    std::string grassTexturePath = "assets/textures/textura_grama.jpg";
+    for (const char *ext : {".jpg", ".jpeg", ".png"})
+    {
+        std::string candidate = std::string("assets/textures/textura_grama") + ext;
+        std::ifstream file(candidate, std::ios::binary);
+        if (file.good())
+        {
+            grassTexturePath = candidate;
+            break;
+        }
+    }
+    unsigned int texGrass = loadTexture(grassTexturePath.c_str());
     unsigned int texOuijaBoard = loadTexture("assets/textures/ouija_board.png");
     unsigned int texOuijaPlanchette = loadTexture("assets/textures/ouija_planchette.png");
 
@@ -1490,7 +1532,7 @@ int main()
 
         Material mountainMat{
             {0.025f, 0.025f, 0.040f},
-            {0.20f, 0.22f, 0.30f},
+            {0.13f, 0.15f, 0.21f},
             {0.0f, 0.0f, 0.0f},
             1.0f,
             {0.025f, 0.030f, 0.045f}};
@@ -1502,11 +1544,14 @@ int main()
             8.0f,
             {0.28f, 0.28f, 0.23f}};
 
+        // O gramado rodeia os quatro lados da casa, inclusive a saida lateral.
+        // Fica abaixo do piso interno (y=0), evitando sobreposicao/z-fighting.
+        // Repeticao UV evita esticar a textura por todo o terreno de 110x110.
         drawObj(shader, plane,
                 makeModel(
-                    {0.0f, 0.0f, -30.0f},
-                    {110.0f, 1.0f, 50.0f}),
-                grassMat, white);
+                    {0.0f, -0.055f, 0.0f},
+                    {110.0f, 1.0f, 110.0f}),
+                grassMat, texGrass, glm::vec2(36.0f, 36.0f));
 
         drawObj(shader, sphere,
                 makeModel(moonPos, {1.8f, 1.8f, 1.8f}),
@@ -1515,7 +1560,7 @@ int main()
         shader.setFloat("isMountain", 1.0f);
         drawObj(shader, mountains,
                 glm::mat4(1.0f),
-                mountainMat, white);
+                mountainMat, texMountain);
         shader.setFloat("isMountain", 0.0f);
 
         {
@@ -2208,6 +2253,8 @@ int main()
             groundFogShader.setVec2("uvScale", glm::vec2(1.0f));
             groundFogShader.setFloat("time", now);
 
+            // Quatro planos de neblina ao redor de toda a casa.
+            // O shader recorta o interior e desfaz a nevoa antes das montanhas.
             const float fogHeights[4] = {0.10f, 0.27f, 0.45f, 0.65f};
             const float fogOpacities[4] = {0.23f, 0.25f, 0.20f, 0.13f};
 
@@ -2217,8 +2264,8 @@ int main()
                 groundFogShader.setFloat("layerIndex", (float)i);
 
                 groundFogShader.setMat4("model",
-                                        makeModel({-1.8f, fogHeights[i], -24.0f},
-                                                  {48.0f, 1.0f, 38.0f}));
+                                        makeModel({0.0f, fogHeights[i], 0.0f},
+                                                  {58.0f, 1.0f, 58.0f}));
                 plane.draw();
             }
 

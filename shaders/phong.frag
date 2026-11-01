@@ -47,7 +47,9 @@ vec3 toLinear(vec3 c) { return pow(c, vec3(GAMMA)); }
 // Esta e uma aproximacao geometrica, nao shadow mapping.
 float moonVisibility(vec3 p, vec3 L) {
     const float WALL_Z = -4.90;
-    if (p.z < -5.1) return 1.0; // exterior
+    // Fora das quatro paredes, o luar chega diretamente ao terreno.
+    // A porta esta em +X; o teste antigo em Z deixava essa lateral escura.
+    if (abs(p.x) > 5.1 || abs(p.z) > 5.1) return 1.0; // exterior
     if (L.z >= -0.01) return 0.0;
 
     float t = (WALL_Z - p.z) / L.z;
@@ -103,7 +105,7 @@ void main() {
         result *= 0.10;
     }
 
-    // Luzes de ponto do cenario nao iluminam as montanhas distantes.
+    // Oito luzes do cenario nao iluminam as montanhas distantes.
     if (isMountain < 0.5) {
         for (int i = 0; i < numLights; i++) {
             vec3 L = normalize(lights[i].position - FragPos);
@@ -136,8 +138,9 @@ void main() {
 
     float moonDiffuse = max(dot(N, moonDir), 0.0);
 
-    // Luar normal para a grama e para a sala.
-    float fill = (FragPos.z < -5.1) ? 0.16 : 0.0;
+    // O preenchimento suave do gramado vale para todos os lados da casa.
+    bool outsideHouse = abs(FragPos.x) > 5.1 || abs(FragPos.z) > 5.1;
+    float fill = outsideHouse ? 0.16 : 0.0;
     vec3 normalMoon = moonLightColor * kd * texColor *
                       (fill + 0.85 * moonDiffuse);
 
@@ -145,16 +148,15 @@ void main() {
     float peakGradient = smoothstep(1.0, 4.8, FragPos.y);
     peakGradient = pow(peakGradient, 1.5);
 
-    // 0.002 = base quase escura; 0.012 = pico suavemente iluminado.
-    float peakIntensity = mix(0.002, 0.012, peakGradient);
+    // Luar mais contido: os picos continuam visiveis, mas o relevo fica mais escuro.
+    float peakIntensity = mix(0.004, 0.18, peakGradient);
     vec3 mountainMoon = moonLightColor * texColor * peakIntensity;
 
     vec3 moonContribution = mix(normalMoon, mountainMoon,
                                 clamp(isMountain, 0.0, 1.0));
 
-    // Aplicada uma unica vez, depois de calcular moonMask e moonContribution.
-    // So aumenta a luz que atravessou a janela, sem alterar a parte externa.
-    float indoorFactor = (FragPos.z > -4.90) ? moonIndoorBoost : 1.0;
+    // O reforco do luar so vale dentro da casa; nunca no gramado externo.
+    float indoorFactor = outsideHouse ? 1.0 : moonIndoorBoost;
     result += moonMask * moonContribution * indoorFactor;
 
     // Emissao propria somente para objetos comuns, incluindo o ceu.
