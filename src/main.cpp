@@ -799,6 +799,9 @@ int main()
     unsigned int nrmWall = loadNormalMap("assets/textures/wall_normal.jpg");
     unsigned int texMoon = loadTexture("assets/textures/textura_lua.jpg");
     unsigned int texMountain = loadTexture("assets/textures/textura_montanha.jpeg");
+    unsigned int texPumpkin = loadTexture("assets/textures/textura_abobora.png");
+    unsigned int texTombs = loadTexture("assets/textures/textura_lapides.png");
+    unsigned int texCrystal = loadTexture("assets/textures/textura_cristal.png");
 
     // Textura do gramado: aceita .jpg, .jpeg ou .png, sem precisar alterar o codigo.
     std::string grassTexturePath = "assets/textures/textura_grama.jpg";
@@ -863,6 +866,12 @@ int main()
             }
     };
 
+    // A textura ja contem a cor laranja da casca. Usar um material quase neutro
+    // evita multiplicar a textura por outro laranja e escurecer os detalhes.
+    Material pumpkinSkin = Mat::pumpkin();
+    pumpkinSkin.ka = glm::vec3(0.25f);
+    pumpkinSkin.kd = glm::vec3(0.85f);
+
     // Modelo reutilizavel das aboboras, com rosto emissivo quando acesas.
     auto pumpkin = [&](glm::vec3 floorPos, float s, float rotY, bool lit, float fl)
     {
@@ -870,7 +879,8 @@ int main()
         b = glm::rotate(b, glm::radians(rotY), glm::vec3(0, 1, 0));
         b = glm::scale(b, glm::vec3(s));
 
-        drawObj(shader, sphere, glm::scale(b, glm::vec3(0.6f, 0.5f, 0.6f)), Mat::pumpkin(), white);
+        // Textura aplicada APENAS ao corpo laranja.
+        drawObj(shader, sphere, glm::scale(b, glm::vec3(0.6f, 0.5f, 0.6f)), pumpkinSkin, texPumpkin);
         drawObj(shader, cylinder, glm::scale(glm::translate(b, glm::vec3(0, 0.27f, 0)), glm::vec3(0.06f, 0.12f, 0.06f)), Mat::stem(), white);
         Material face = lit ? Mat::glowing(glm::vec3(1.0f, 0.6f, 0.1f) * fl) : Mat::black();
 
@@ -893,12 +903,12 @@ int main()
 
     auto tomb = [&](glm::vec3 pos, float rotY, float h)
     {
-        drawObj(shader, cube, makeModel(pos + glm::vec3(0, h * 0.5f, 0), {0.5f, h, 0.12f}, rotY), Mat::stone(), white);
+        drawObj(shader, cube, makeModel(pos + glm::vec3(0, h * 0.5f, 0), {0.5f, h, 0.12f}, rotY), Mat::stone(), texTombs);
         glm::mat4 t = glm::translate(glm::mat4(1.0f), pos + glm::vec3(0, h, 0));
         t = glm::rotate(t, glm::radians(rotY), glm::vec3(0, 1, 0));
         t = glm::rotate(t, glm::radians(90.0f), glm::vec3(1, 0, 0));
         t = glm::scale(t, glm::vec3(0.5f, 0.12f, 0.5f));
-        drawObj(shader, cylinder, t, Mat::stone(), white);
+        drawObj(shader, cylinder, t, Mat::stone(), texTombs);
 
         glm::mat4 c = glm::translate(glm::mat4(1.0f), pos + glm::vec3(0, h * 0.6f, 0));
         c = glm::rotate(c, glm::radians(rotY), glm::vec3(0, 1, 0));
@@ -1024,6 +1034,9 @@ int main()
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         shader.use();
         shader.setFloat("isMountain", 0.0f);
+        shader.setFloat("objectAlpha", 1.0f);
+        shader.setFloat("crystalMode", 0.0f);
+        shader.setVec3("crystalTint", glm::vec3(1.0f));
         shader.setVec3("fogColor", fogCol);
         shader.setFloat("fogDensity", fogDen);
         int w, h;
@@ -1486,8 +1499,6 @@ int main()
 
                 Material darkVelvet = mk({0.28f, 0.13f, 0.32f});
                 Material brass = mk({0.65f, 0.48f, 0.23f});
-                Material crystal = mk({0.31f, 0.19f, 0.64f},
-                                      {0.62f, 0.55f, 0.85f}, 96.0f);
 
                 drawObj(shader, cylinder,
                         part(base, {0.0f, 0.004f, 0.0f}, {0.25f, 0.008f, 0.25f}),
@@ -1499,9 +1510,8 @@ int main()
                         part(base, {0.0f, 0.049f, 0.0f}, {0.095f, 0.023f, 0.095f}),
                         brass, white);
 
-                drawObj(shader, sphere,
-                        part(base, {0.0f, 0.170f, 0.0f}, {0.24f, 0.24f, 0.24f}),
-                        crystal, white);
+                // A esfera sera desenhada no passe translucido, apos os objetos opacos.
+                // Isso permite ver o suporte e os livros atras do cristal.
             }
 
             flatBook({1.10f, s2, z}, 0.22f, 0.045f, 0.17f, {0.09f, 0.36f, 0.31f}, 0.0f);
@@ -1601,13 +1611,13 @@ int main()
                 drawObj(graveyardShader, cube,
                         glm::scale(glm::translate(base, {0, t.height * 0.5f, 0}),
                                    {t.width, t.height, 0.17f}),
-                        stone, white);
+                        stone, texTombs);
 
                 glm::mat4 cap = glm::translate(base, {0, t.height, 0});
                 cap = glm::rotate(cap, glm::radians(90.0f), glm::vec3(1, 0, 0));
                 drawObj(graveyardShader, cylinder,
                         glm::scale(cap, {t.width, 0.18f, t.width}),
-                        stone, white);
+                        stone, texTombs);
             }
 
             shader.use();
@@ -1755,13 +1765,8 @@ int main()
             for (float z : lz)
                 drawObj(shader, cube, makeModel({x, 0.35f, z}, {0.1f, 0.7f, 0.1f}), Mat::wood(), texWood);
 
-        // Bola de cristal ambar: assume a iluminacao e a interacao do antigo abajur.
-        Material amberCrystal{
-            {0.12f, 0.065f, 0.015f},
-            {0.50f, 0.25f, 0.055f},
-            {0.75f, 0.50f, 0.18f},
-            96.0f,
-            crystalOn ? glm::vec3(0.95f, 0.43f, 0.09f) : glm::vec3(0.0f)};
+        // Bola de cristal ambar: a esfera sera desenhada no passe translucido.
+        // O suporte continua opaco e a interacao [E] continua intacta.
         Material crystalStand{
             {0.06f, 0.032f, 0.015f},
             {0.30f, 0.16f, 0.06f},
@@ -1771,7 +1776,7 @@ int main()
         drawObj(shader, cylinder, makeModel({0, 0.83f, 0}, {0.27f, 0.05f, 0.27f}), crystalStand, white);
         drawObj(shader, cylinder, makeModel({0, 0.90f, 0}, {0.12f, 0.12f, 0.12f}), crystalStand, white);
         drawObj(shader, cylinder, makeModel({0, 0.97f, 0}, {0.19f, 0.04f, 0.19f}), crystalStand, white);
-        drawObj(shader, sphere, makeModel({0, 1.125f, 0}, {0.33f, 0.33f, 0.33f}), amberCrystal, white);
+        // A esfera ambar e renderizada depois dos demais objetos.
 
         {
 
@@ -2232,6 +2237,81 @@ int main()
             drawObj(shader, cube, glm::scale(glm::translate(kb, {0, -0.03f, 0}), {0.035f, 0.32f, 0.035f}), gold, white);
             drawObj(shader, cube, glm::scale(glm::translate(kb, {0.05f, -0.14f, 0}), {0.08f, 0.035f, 0.035f}), gold, white);
             drawObj(shader, cube, glm::scale(glm::translate(kb, {0.04f, -0.08f, 0}), {0.06f, 0.035f, 0.035f}), gold, white);
+        }
+
+        // Passe de cristal: desenha as esferas APOS os objetos opacos.
+        // Usamos depth test, mas nao gravamos no depth buffer para permitir
+        // enxergar os objetos atras das esferas de vidro.
+        {
+            struct CrystalSphere
+            {
+                glm::vec3 pos;
+                glm::vec3 scale;
+                Material mat;
+                glm::vec3 tint;
+                float alpha;
+            };
+
+            Material purpleCrystal{
+                {0.26f, 0.23f, 0.36f},
+                {0.83f, 0.78f, 0.98f},
+                {0.95f, 0.91f, 1.00f},
+                128.0f,
+                {0.0f, 0.0f, 0.0f}};
+            Material amberCrystal{
+                {0.24f, 0.18f, 0.09f},
+                {0.96f, 0.84f, 0.65f},
+                {0.95f, 0.81f, 0.52f},
+                128.0f,
+                // Brilho ambar mais suave; no shader, segue os veios da textura.
+                crystalOn ? glm::vec3(0.70f, 0.32f, 0.10f) : glm::vec3(0.0f)};
+
+            CrystalSphere crystals[2] = {
+                {{0.83f, 1.455f, 4.60f}, {0.24f, 0.24f, 0.24f}, purpleCrystal, {0.69f, 0.48f, 1.0f}, 0.57f},
+                {{0.0f, 1.125f, 0.0f}, {0.33f, 0.33f, 0.33f}, amberCrystal, {1.0f, 0.69f, 0.27f}, crystalOn ? 0.78f : 0.62f}};
+
+            // Transparencias devem ser desenhadas de tras para frente.
+            if (glm::distance(camera.position, crystals[0].pos) <
+                glm::distance(camera.position, crystals[1].pos))
+                std::swap(crystals[0], crystals[1]);
+
+            const GLboolean blendWasEnabled = glIsEnabled(GL_BLEND);
+            const GLboolean cullWasEnabled = glIsEnabled(GL_CULL_FACE);
+            GLboolean depthWriteWasEnabled;
+            glGetBooleanv(GL_DEPTH_WRITEMASK, &depthWriteWasEnabled);
+            GLint blendSrcRGB, blendDstRGB, blendSrcAlpha, blendDstAlpha;
+            GLint cullModeWasEnabled;
+            glGetIntegerv(GL_BLEND_SRC_RGB, &blendSrcRGB);
+            glGetIntegerv(GL_BLEND_DST_RGB, &blendDstRGB);
+            glGetIntegerv(GL_BLEND_SRC_ALPHA, &blendSrcAlpha);
+            glGetIntegerv(GL_BLEND_DST_ALPHA, &blendDstAlpha);
+            glGetIntegerv(GL_CULL_FACE_MODE, &cullModeWasEnabled);
+
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glDepthMask(GL_FALSE);
+            glEnable(GL_CULL_FACE); // somente faces frontais: evita vidro duplicado
+            glCullFace(GL_BACK);
+
+            shader.use();
+            shader.setFloat("crystalMode", 1.0f);
+            for (const CrystalSphere &c : crystals)
+            {
+                shader.setFloat("objectAlpha", c.alpha);
+                shader.setVec3("crystalTint", c.tint);
+                drawObj(shader, sphere, makeModel(c.pos, c.scale), c.mat, texCrystal);
+            }
+            shader.setFloat("objectAlpha", 1.0f);
+            shader.setFloat("crystalMode", 0.0f);
+            shader.setVec3("crystalTint", glm::vec3(1.0f));
+
+            glDepthMask(depthWriteWasEnabled);
+            glCullFace(cullModeWasEnabled);
+            if (!cullWasEnabled)
+                glDisable(GL_CULL_FACE);
+            glBlendFuncSeparate(blendSrcRGB, blendDstRGB, blendSrcAlpha, blendDstAlpha);
+            if (!blendWasEnabled)
+                glDisable(GL_BLEND);
         }
 
         {
