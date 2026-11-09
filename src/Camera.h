@@ -1,20 +1,25 @@
 #pragma once
+// Camera em primeira pessoa (FPS): posicao, orientacao e movimento.
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 class Camera {
 public:
+    // ---------- Vetores de orientacao ----------
     glm::vec3 position;
     glm::vec3 front{0.0f, 0.0f, -1.0f};
     glm::vec3 up{0.0f, 1.0f, 0.0f};
     glm::vec3 right{1.0f, 0.0f, 0.0f};
+    // ---------- Angulos e parametros ----------
     float yaw = -90.0f;   // giro horizontal (graus)
     float pitch = 0.0f;   // giro vertical (graus)
     float speed = 3.0f;
     float sensitivity = 0.1f;
 
+    // Construtor (posicao inicial)
     Camera(glm::vec3 pos = glm::vec3(0.0f, 1.6f, 5.0f)) : position(pos) { updateVectors(); }
 
+    // Matriz de visualizacao
     glm::mat4 getViewMatrix() const {
         return glm::lookAt(position, position + front, up);
     }
@@ -25,6 +30,7 @@ public:
     void moveRight(float dt)    { position += right * speed * dt; }
     void moveLeft(float dt)     { position -= right * speed * dt; }
 
+    // Gira com o mouse
     void rotate(float dx, float dy) {
         yaw   += dx * sensitivity;
         pitch += dy * sensitivity;
@@ -34,6 +40,7 @@ public:
     }
 
 private:
+    // Recalcula front/right/up a partir de yaw e pitch
     void updateVectors() {
         glm::vec3 f;
         f.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));

@@ -1,9 +1,12 @@
 #version 330 core
+// Variante do Phong sem modo cristal (luar so pela parede do fundo)
+// ---------- Entradas / saida ----------
 in vec3 FragPos;
 in vec3 Normal;
 in vec2 UV;
 out vec4 FragColor;
 
+// ---------- Estruturas ----------
 struct Material {
     vec3 ka;        // reflexao ambiente
     vec3 kd;        // reflexao difusa
@@ -19,6 +22,7 @@ struct Light {
     float quadratic;
 };
 
+// ---------- Uniforms ----------
 #define MAX_LIGHTS 9
 uniform Material material;
 uniform Light lights[MAX_LIGHTS];
@@ -37,6 +41,7 @@ uniform float isMountain; // 1.0 = montanha; 0.0 = outros objetos
 uniform vec3 fogColor;
 uniform float fogDensity;
 
+// ---------- Constantes e funcoes auxiliares ----------
 const vec3 SKY_AMBIENT    = vec3(1.00, 0.80, 1.30);
 const vec3 GROUND_AMBIENT = vec3(0.40, 0.35, 0.45);
 const float GAMMA = 2.2;
@@ -78,17 +83,23 @@ mat3 cotangentFrame(vec3 N, vec3 p, vec2 uv) {
     return mat3(T * invmax, B * invmax, N);
 }
 
+// =========================================================
+// MAIN
+// =========================================================
 void main() {
+    // Normal (com normal map opcional)
     vec3 N = normalize(Normal);
     if (normalStrength > 0.0) {
         vec3 n = texture(normalMap, UV).rgb * 2.0 - 1.0;
         n.xy *= normalStrength;
         N = normalize(cotangentFrame(N, FragPos, UV) * n);
     }
+    // Direcao para a camera
     vec3 V = normalize(viewPos - FragPos);
 
     // A textura sRGB ja chega em espaco linear do hardware.
     vec3 texColor = texture(tex, UV).rgb;
+    // Coeficientes do material em espaco linear
     vec3 ka = toLinear(material.ka);
     vec3 kd = toLinear(material.kd);
     vec3 ks = toLinear(material.ks);
@@ -168,6 +179,7 @@ void main() {
     float fog = 1.0 - exp(-pow(d * fogDensity, 2.0));
     result = mix(result, toLinear(fogColor), clamp(fog, 0.0, 1.0));
 
+    // Correcao gama
     result = pow(clamp(result, 0.0, 1.0), vec3(1.0 / GAMMA));
     FragColor = vec4(result, 1.0);
 }

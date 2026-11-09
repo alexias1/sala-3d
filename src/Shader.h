@@ -7,36 +7,43 @@
 #include <iostream>
 #include <string>
 
+// Carrega, compila e linka um par vertex/fragment shader
 class Shader {
 public:
     unsigned int ID;
 
     Shader(const std::string& vertPath, const std::string& fragPath) {
+        // Le os arquivos .vert e .frag
         std::string vCode = readFile(vertPath);
         std::string fCode = readFile(fragPath);
         const char* v = vCode.c_str();
         const char* f = fCode.c_str();
 
+        // Vertex shader
         unsigned int vs = glCreateShader(GL_VERTEX_SHADER);
         glShaderSource(vs, 1, &v, nullptr);
         glCompileShader(vs);
         check(vs, "VERTEX");
 
+        // Fragment shader
         unsigned int fs = glCreateShader(GL_FRAGMENT_SHADER);
         glShaderSource(fs, 1, &f, nullptr);
         glCompileShader(fs);
         check(fs, "FRAGMENT");
 
+        // Programa final
         ID = glCreateProgram();
         glAttachShader(ID, vs);
         glAttachShader(ID, fs);
         glLinkProgram(ID);
         check(ID, "PROGRAM");
 
+        // Shaders ja linkados podem ser liberados
         glDeleteShader(vs);
         glDeleteShader(fs);
     }
 
+    // Ativa o programa
     void use() const { glUseProgram(ID); }
 
     // Funções para enviar valores (uniforms) ao shader
@@ -48,6 +55,7 @@ public:
     void setVec4(const std::string& n, const glm::vec4& v) const { glUniform4fv(glGetUniformLocation(ID, n.c_str()), 1, &v[0]); }
 
 private:
+    // Le um arquivo inteiro como texto
     static std::string readFile(const std::string& path) {
         std::ifstream file(path);
         if (!file) std::cerr << "Nao consegui abrir: " << path << "\n";
@@ -56,6 +64,7 @@ private:
         return ss.str();
     }
 
+    // Mostra erros de compilacao/link
     static void check(unsigned int obj, const std::string& type) {
         int ok; char log[1024];
         if (type != "PROGRAM") {

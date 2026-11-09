@@ -5,13 +5,17 @@
 #include <cmath>
 #include <cstddef>
 
+// Vertice: posicao, normal e coordenada de textura
 struct Vertex { glm::vec3 pos; glm::vec3 normal; glm::vec2 uv; };
 
+// Malha na GPU (VAO/VBO/EBO) + geradores de primitivas
 class Mesh {
 public:
+    // Buffers OpenGL
     unsigned int VAO = 0, VBO = 0, EBO = 0;
     int indexCount = 0;
 
+    // Envia dados a GPU (atributos: 0=pos, 1=normal, 2=uv)
     Mesh(const std::vector<Vertex>& v, const std::vector<unsigned int>& idx) {
         indexCount = (int)idx.size();
         glGenVertexArrays(1, &VAO);
@@ -30,6 +34,7 @@ public:
         glEnableVertexAttribArray(2);
     }
 
+    // Desenha a malha
     void draw() const {
         glBindVertexArray(VAO);
         glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, 0);

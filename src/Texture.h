@@ -12,6 +12,7 @@
 #define GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT 0x84FF
 #endif
 
+// Mipmaps, repeticao e filtros da textura atual
 inline void setTexParams() {
     glGenerateMipmap(GL_TEXTURE_2D);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
@@ -38,6 +39,7 @@ inline unsigned int makeWhiteTexture() {
     return id;
 }
 
+// Textura de cor (sRGB); usa branco se falhar
 inline unsigned int loadTexture(const std::string& path) {
     int w, h, n;
     stbi_set_flip_vertically_on_load(true);   // imagem tem y para baixo, OpenGL para cima
