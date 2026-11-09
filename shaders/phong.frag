@@ -1,9 +1,12 @@
 #version 330 core
+// Phong principal: luzes de ponto, luar, normal map, neblina e cristal
+// ---------- Entradas / saida ----------
 in vec3 FragPos;
 in vec3 Normal;
 in vec2 UV;
 out vec4 FragColor;
 
+// ---------- Estruturas ----------
 struct Material {
     vec3 ka;        // reflexao ambiente
     vec3 kd;        // reflexao difusa
@@ -19,6 +22,7 @@ struct Light {
     float quadratic;
 };
 
+// ---------- Uniforms ----------
 #define MAX_LIGHTS 16
 uniform Material material;
 uniform Light lights[MAX_LIGHTS];
@@ -44,6 +48,7 @@ uniform float crystalMode;
 uniform vec3 crystalTint;
 
 
+// ---------- Constantes e funcoes auxiliares ----------
 const vec3 SKY_AMBIENT    = vec3(1.00, 0.80, 1.30);
 const vec3 GROUND_AMBIENT = vec3(0.40, 0.35, 0.45);
 const float GAMMA = 2.2;
@@ -87,13 +92,18 @@ mat3 cotangentFrame(vec3 N, vec3 p, vec2 uv) {
     return mat3(T * invmax, B * invmax, N);
 }
 
+// =========================================================
+// MAIN
+// =========================================================
 void main() {
+    // Normal (com normal map opcional)
     vec3 N = normalize(Normal);
     if (normalStrength > 0.0) {
         vec3 n = texture(normalMap, UV).rgb * 2.0 - 1.0;
         n.xy *= normalStrength;
         N = normalize(cotangentFrame(N, FragPos, UV) * n);
     }
+    // Direcao para a camera
     vec3 V = normalize(viewPos - FragPos);
 
     // A textura sRGB ja chega em espaco linear do hardware.
@@ -104,6 +114,7 @@ void main() {
         float luminosity = dot(texColor, vec3(0.2126, 0.7152, 0.0722));
         texColor = mix(texColor, luminosity * crystalTint, 0.87);
     }
+    // Coeficientes do material em espaco linear
     vec3 ka = toLinear(material.ka);
     vec3 kd = toLinear(material.kd);
     vec3 ks = toLinear(material.ks);
@@ -188,6 +199,7 @@ void main() {
     float fog = 1.0 - exp(-pow(d * fogDensity, 2.0));
     result = mix(result, toLinear(fogColor), clamp(fog, 0.0, 1.0));
 
+    // Correcao gama e transparencia final
     result = pow(clamp(result, 0.0, 1.0), vec3(1.0 / GAMMA));
     float alpha = objectAlpha;
     if (crystalMode > 0.5) {

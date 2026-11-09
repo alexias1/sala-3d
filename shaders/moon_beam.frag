@@ -1,9 +1,12 @@
 #version 330 core
+// Feixes de luar translucidos com poeira animada
+// ---------- Entradas / saida ----------
 in vec3 FragPos;
 in vec3 Normal;
 in vec2 UV;
 out vec4 FragColor;
 
+// ---------- Uniforms ----------
 uniform float time;
 uniform float beamStrength;
 
@@ -15,6 +18,7 @@ float hash21(vec2 p)
     return fract(p.x * p.y);
 }
 
+// Ruido suave interpolado
 float noise2d(vec2 p)
 {
     vec2 i = floor(p);
@@ -27,6 +31,7 @@ float noise2d(vec2 p)
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
+// Ruido fractal (3 oitavas)
 float fbm(vec2 p)
 {
     float s = 0.0;
@@ -40,6 +45,7 @@ float fbm(vec2 p)
     return s;
 }
 
+// ---------- Main ----------
 void main()
 {
     // Fita dissolve nas bordas, no comeco e no final do feixe.

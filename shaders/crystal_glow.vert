@@ -1,6 +1,7 @@
 
 #version 330 core
 
+// Repassa UV para o brilho do cristal
 layout(location = 0) in vec3 aPos;
 layout(location = 2) in vec2 aUV;
 

@@ -2,6 +2,7 @@
 // HUD 2D: texto e retângulos na tela, SEM biblioteca de fontes.
 // Usa stb_easy_font.h, que transforma cada letra em quads (retângulos).
 // Limitação: só ASCII (sem acentos nem cedilha).
+// ---------- Includes ----------
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 #include <vector>
@@ -11,6 +12,7 @@
 
 class Hud {
 public:
+    // Cria VAO/VBO/EBO e os indices dos quads
     Hud() : shader("shaders/hud.vert", "shaders/hud.frag") {
         glGenVertexArrays(1, &vao);
         glGenBuffers(1, &vbo);
@@ -32,6 +34,7 @@ public:
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, idx.size() * sizeof(unsigned int), idx.data(), GL_STATIC_DRAW);
     }
 
+    // Inicia o desenho 2D (sem profundidade, com blend)
     void begin(int w, int h) {
         sw = (float)w; sh = (float)h;
         glDisable(GL_DEPTH_TEST);
@@ -43,6 +46,7 @@ public:
         glBindBuffer(GL_ARRAY_BUFFER, vbo);
     }
 
+    // Volta ao estado 3D
     void end() {
         glDisable(GL_BLEND);
         glEnable(GL_DEPTH_TEST);
@@ -58,6 +62,7 @@ public:
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
     }
 
+    // Largura do texto em pixels
     float width(const std::string& s, float scale) {
         return stb_easy_font_width((char*)s.c_str()) * scale;
     }
@@ -76,14 +81,18 @@ public:
         glDrawElements(GL_TRIANGLES, quads * 6, GL_UNSIGNED_INT, 0);
     }
 
+    // Texto centralizado em cx
     void textCentered(float cx, float y, const std::string& s, float scale, glm::vec3 color) {
         text(cx - width(s, scale) / 2.0f, y, s, scale, color);
     }
 
 private:
+    // Maximo de quads por texto
     static const int MAXQ = 1024;
+    // Recursos OpenGL e tamanho da tela
     Shader shader;
     unsigned int vao = 0, vbo = 0, ebo = 0;
     float sw = 1, sh = 1;
+    // Vertices gerados pelo stb_easy_font
     char buf[MAXQ * 64];
 };

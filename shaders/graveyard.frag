@@ -1,9 +1,12 @@
 #version 330 core
+// Lapides externas: frente escura, luar no topo e contraluz nas bordas
+// ---------- Entradas / saida ----------
 in vec3 FragPos;
 in vec3 Normal;
 in vec2 UV;
 out vec4 FragColor;
 
+// ---------- Material e uniforms ----------
 struct Material {
     vec3 ka;
     vec3 kd;

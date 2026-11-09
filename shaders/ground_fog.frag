@@ -7,10 +7,13 @@ in vec2 UV;
 
 out vec4 FragColor;
 
+// ---------- Uniforms ----------
 uniform float time;
 uniform float opacity;
 uniform float layerIndex;
 
+// ---------- Ruido procedural ----------
+// Hash pseudoaleatorio 2D
 float hash21(vec2 p)
 {
     p = fract(p * vec2(123.34, 345.45));
@@ -47,6 +50,7 @@ float fbm(vec2 p)
     return value;
 }
 
+// ---------- Main ----------
 void main()
 {
     vec2 pos = FragPos.xz;

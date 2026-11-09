@@ -1,4 +1,5 @@
 #version 330 core
+// Cor interpolada do vertice
 in vec3 vColor;
 out vec4 FragColor;
 

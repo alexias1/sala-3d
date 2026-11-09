@@ -4,6 +4,7 @@
 in vec2 UV;
 out vec4 FragColor;
 
+// ---------- Uniforms ----------
 uniform float visibility;
 
 void main()

@@ -1,6 +1,7 @@
 
 #version 330 core
 
+// Halo roxo radial, transparente nas bordas
 in vec2 UV;
 out vec4 FragColor;
 
