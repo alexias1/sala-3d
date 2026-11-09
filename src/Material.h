@@ -1,13 +1,16 @@
 #pragma once
 #include <glm/glm.hpp>
 
+// Material Phong: ambiente, difuso, especular, brilho e emissao
 struct Material {
     glm::vec3 ka, kd, ks;
     float shininess;
     glm::vec3 emissive{0.0f};
 };
 
+// Biblioteca de materiais prontos
 namespace Mat {
+    // ---------- Basicos ----------
     inline Material wood()    { return {{0.25f,0.25f,0.25f}, {0.8f,0.8f,0.8f}, {0.10f,0.10f,0.10f}, 8.0f}; }
     inline Material metal()   { return {{0.20f,0.20f,0.20f}, {0.4f,0.4f,0.4f}, {1.00f,1.00f,1.00f}, 128.0f}; }
     inline Material plastic() { return {{0.20f,0.20f,0.20f}, {0.7f,0.7f,0.7f}, {0.50f,0.50f,0.50f}, 32.0f}; }

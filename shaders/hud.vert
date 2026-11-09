@@ -1,4 +1,5 @@
 #version 330 core
+// HUD: converte pixels para coordenadas de tela (NDC)
 layout (location = 0) in vec2 aPos;   // pixels, y para baixo
 
 uniform vec2 screen;   // tamanho da janela em pixels
